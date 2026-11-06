@@ -1,0 +1,7 @@
+.env
+__pycache__/
+*.pyc
+.pytest_cache/
+.sandbox_orders.json
+audit.jsonl
+.venv/

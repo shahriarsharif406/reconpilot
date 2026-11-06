@@ -1,0 +1,437 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ReconPilot</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%230e2238'/%3E%3Cpath d='M8 17l5 5 11-12' fill='none' stroke='%2362d5a2' stroke-width='4' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
+<meta name="description" content="Three-way reconciliation for PayPal, your books and your bank, with AI explanations and human approval.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,500..900&family=Public+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --paper:#e6ebf0; --sheet:#f7f9fb; --ink:#0e2238; --ink-2:#2a3f55; --muted:#5a6b7c; --rule:#c3ccd5; --rule-2:#d9e0e6;
+  --tick:#13694a; --red:#b3281f; --amber:#a8690a; --slate:#3d6a96; --navy:#0e2238; --on-navy:#e8eef4; --navy-rule:#2c4560;
+  --display:"Archivo","Arial Narrow",system-ui,sans-serif; --body:"Public Sans",system-ui,-apple-system,"Segoe UI",sans-serif;
+}
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{margin:0;background:var(--paper);color:var(--ink);font:400 15px/1.5 var(--body);font-variant-numeric:tabular-nums}
+button,input,textarea,select{font:inherit;color:inherit}
+:focus-visible{outline:2px solid var(--slate);outline-offset:2px}
+.num{font-variant-numeric:tabular-nums lining-nums;text-align:right;white-space:nowrap}
+a{color:inherit}
+
+/* top bar */
+.bar{display:flex;flex-wrap:wrap;align-items:center;gap:14px 22px;padding:14px clamp(16px,4vw,44px);background:var(--sheet);border-bottom:1px solid var(--rule)}
+.brand{font:800 22px/1 var(--display);font-stretch:112%;letter-spacing:-.01em}
+.brand i{font-style:normal;color:var(--tick)}
+.seg{display:inline-flex;border:1px solid var(--ink);border-radius:3px;overflow:hidden}
+.seg button{white-space:nowrap;padding:7px 13px;background:transparent;border:0;cursor:pointer;font-weight:500}
+.seg button[aria-pressed=true]{background:var(--ink);color:var(--sheet)}
+.btn{padding:8px 16px;border:1px solid var(--ink);background:var(--ink);color:var(--sheet);border-radius:3px;cursor:pointer;font-weight:600}
+.btn:hover{background:var(--ink-2)} .btn[disabled]{opacity:.55;cursor:progress}
+.btn.ghost{background:transparent;color:var(--ink)} .btn.ghost:hover{background:var(--rule-2)}
+.btn.good{background:var(--tick);border-color:var(--tick)} .btn.bad{background:transparent;color:var(--red);border-color:var(--red)}
+.btn.bad:hover{background:#f6e3e1}
+.spacer{flex:1}
+.upl{display:none;flex-wrap:wrap;gap:12px 22px;align-items:flex-end;padding:14px clamp(16px,4vw,44px);background:var(--paper);border-bottom:1px solid var(--rule)}
+.upl.on{display:flex}
+.upl label{display:flex;flex-direction:column;gap:4px;font-size:13px;color:var(--muted);min-width:0}
+.upl label span b{color:var(--ink);font-weight:600}
+.upl input[type=file]{font-size:13px;max-width:100%}
+.upl select{padding:6px 8px;border:1px solid var(--ink);border-radius:3px;background:var(--sheet)}
+.upl .hint{font-size:13px;color:var(--muted);flex-basis:100%;margin:0}
+.upl .hint a{color:var(--ink);font-weight:600}
+.mode{font-size:13px;color:var(--muted)} .mode b{color:var(--ink);font-weight:600}
+
+/* tie-out band */
+.tie{background:var(--navy);color:var(--on-navy);padding:clamp(22px,4vw,44px) clamp(16px,4vw,44px) 26px}
+.tie h1{margin:0;font:800 clamp(30px,5.2vw,58px)/.98 var(--display);font-stretch:108%;letter-spacing:-.02em;max-width:18ch}
+.tie .sub{margin:12px 0 0;color:#a9bccd;max-width:62ch}
+.tape{margin-top:26px;overflow-x:auto}
+.tape table{width:100%;min-width:700px;border-collapse:collapse}
+.tape th{font:600 12px/1.2 var(--body);color:#9db2c5;text-align:right;padding:0 14px 10px;border-bottom:1px solid var(--navy-rule)}
+.tape th:first-child,.tape td:first-child{text-align:left;padding-left:0}
+.tape td{padding:11px 14px;border-bottom:1px solid var(--navy-rule);font-size:16px}
+.tape td.id{font-weight:600;color:var(--on-navy);white-space:nowrap} .tape td.id small{display:block;font-weight:400;color:#9db2c5;font-size:12px}
+.tape .off{color:#ff9b92;font-weight:600} .tape .off small{display:block;font-weight:400;color:#ffc2bc;font-size:12px}
+.tape .gapnote{color:#9db2c5;font-size:13px;text-align:left;white-space:normal;min-width:180px}
+.tape tr.transit td{color:#9db2c5;font-size:14px}
+.tape tfoot td{border-bottom:0;padding-top:14px;font-weight:700}
+.tape tfoot tr.sum td{border-top:1px solid var(--on-navy);border-bottom:3px double var(--on-navy)}
+.tick{display:inline-block;width:18px;height:18px;vertical-align:-3px;margin-right:6px}
+.tick path{fill:none;stroke:#62d5a2;stroke-width:3;stroke-linecap:round;stroke-linejoin:round;stroke-dasharray:24;stroke-dashoffset:24;animation:draw .5s ease-out forwards;animation-delay:calc(var(--i,0)*.18s + .15s)}
+@keyframes draw{to{stroke-dashoffset:0}}
+.resid{display:flex;align-items:baseline;gap:14px;flex-wrap:wrap;margin-top:18px}
+.resid b{font:800 30px/1 var(--display);font-stretch:108%}
+.resid .tick{width:30px;height:30px;margin-right:8px;vertical-align:-4px}
+.resid span{color:#9db2c5;max-width:60ch}
+
+/* stats */
+.stats{display:flex;flex-wrap:wrap;gap:0;border-bottom:1px solid var(--rule);background:var(--sheet)}
+.stat{padding:16px clamp(16px,4vw,44px) 16px 0;margin-left:clamp(16px,4vw,44px);margin-right:0;min-width:150px}
+.stat b{display:block;font:700 26px/1.1 var(--display);font-stretch:104%}
+.stat span{font-size:13px;color:var(--muted)}
+.stat.red b{color:var(--red)}
+
+/* tabs and content */
+.wrap{padding:0 clamp(16px,4vw,44px) 60px;max-width:1280px}
+.tabs{display:flex;gap:26px;border-bottom:1px solid var(--rule);margin-top:22px;flex-wrap:wrap;align-items:flex-end}
+.tabs button{background:none;border:0;padding:10px 0;cursor:pointer;color:var(--muted);font-weight:600;border-bottom:3px solid transparent;margin-bottom:-1px}
+.tabs button[aria-selected=true]{color:var(--ink);border-bottom-color:var(--ink)}
+.tabs .tools{margin-left:auto;display:flex;gap:8px;padding-bottom:8px;flex-wrap:wrap}
+.filters{display:flex;gap:6px 16px;flex-wrap:wrap;padding:16px 0 10px;align-items:center;color:var(--muted);font-size:14px}
+.chip{background:none;border:0;padding:3px 0;cursor:pointer;color:var(--muted);border-bottom:2px solid transparent}
+.chip[aria-pressed=true]{color:var(--ink);font-weight:600;border-bottom-color:var(--ink)}
+.xs{overflow-x:auto}
+table.ex{width:100%;border-collapse:collapse}
+table.ex th{font-weight:600;font-size:13px;color:var(--muted);text-align:left;padding:8px 12px;border-bottom:1px solid var(--ink)}
+table.ex th.num{text-align:right}
+table.ex td{padding:13px 12px;border-bottom:1px solid var(--rule-2);vertical-align:top}
+table.ex tbody tr{cursor:pointer;background:var(--sheet)} table.ex tbody tr:nth-child(even){background:#f1f4f7}
+table.ex tbody tr:hover{background:#e9eff5}
+table.ex td.sev{width:6px;padding:0} table.ex td.sev i{display:block;width:6px;height:100%;min-height:56px}
+.t-main{font-weight:600} .t-sub{color:var(--muted);font-size:13.5px;max-width:64ch;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.id{font-weight:600;color:var(--ink-2)}
+.stamp{display:inline-block;padding:1px 8px;border:2px solid currentColor;border-radius:3px;font-weight:700;font-size:12px;transform:rotate(-3deg)}
+.stamp.approved{color:var(--tick)} .stamp.rejected{color:var(--muted)} .stamp.escalated{color:var(--amber)} .stamp.open{display:none}
+.sevtxt{font-size:13px;font-weight:600}
+.sev-high{background:var(--red)} .sev-medium{background:var(--amber)} .sev-low{background:var(--slate)}
+.empty{padding:36px 0;color:var(--muted)}
+
+/* drawer */
+.scrim{position:fixed;inset:0;background:rgba(14,34,56,.38);opacity:0;pointer-events:none;transition:opacity .2s}
+.scrim.on{opacity:1;pointer-events:auto}
+.drawer{position:fixed;top:0;right:0;bottom:0;width:min(580px,100%);background:var(--sheet);border-left:1px solid var(--ink);transform:translateX(100%);transition:transform .22s ease-out;overflow-y:auto;padding:22px 24px 40px;z-index:5}
+.drawer.on{transform:none}
+.drawer h2{margin:6px 0 2px;font:800 26px/1.1 var(--display);font-stretch:106%;letter-spacing:-.01em}
+.drawer h3{margin:26px 0 8px;font:700 15px/1.2 var(--body);padding-bottom:6px;border-bottom:1px solid var(--rule)}
+.x{float:right;background:none;border:1px solid var(--rule);width:34px;height:34px;border-radius:3px;cursor:pointer;font-size:18px}
+.amt{font:700 30px/1 var(--display);font-stretch:106%}
+.ev{width:100%;border-collapse:collapse;font-size:13.5px;margin:4px 0 10px}
+.ev caption{text-align:left;font-weight:600;color:var(--muted);padding:6px 0;font-size:13px}
+.ev td,.ev th{padding:5px 6px;border-bottom:1px solid var(--rule-2);text-align:left} .ev th{font-weight:600;color:var(--muted)}
+.ev .num{text-align:right}
+.ai{background:#eef3f7;border-left:4px solid var(--ink);padding:12px 14px;margin-top:6px}
+.ai p{margin:0 0 8px} .ai .src{font-size:12.5px;color:var(--muted)}
+.tag{display:inline-block;border:1px solid var(--ink-2);border-radius:3px;padding:0 7px;font-size:12.5px;font-weight:600;margin-right:6px}
+.je{width:100%;border-collapse:collapse;font-size:14px}
+.je th{text-align:left;font-weight:600;color:var(--muted);padding:5px 6px;border-bottom:1px solid var(--ink);font-size:13px} .je th.num{text-align:right}
+.je td{padding:6px;border-bottom:1px solid var(--rule-2)} .je td.cr{padding-left:28px}
+.je tfoot td{border-top:1px solid var(--ink);border-bottom:3px double var(--ink);font-weight:700}
+.bal{margin:8px 0 0;font-size:13.5px;color:var(--tick);font-weight:600}
+textarea{width:100%;min-height:64px;border:1px solid var(--rule);border-radius:3px;padding:8px;background:#fff;resize:vertical}
+.acts{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
+.decided{border:1px solid var(--rule);padding:12px 14px;background:#fff}
+.note{font-size:13px;color:var(--muted)}
+
+/* audit + chat */
+.audit{width:100%;border-collapse:collapse;font-size:14px;margin-top:14px}
+.audit th{text-align:left;color:var(--muted);font-weight:600;font-size:13px;padding:8px 10px;border-bottom:1px solid var(--ink)}
+.audit td{padding:8px 10px;border-bottom:1px solid var(--rule-2);vertical-align:top} .audit code{font:500 12px ui-monospace,Menlo,monospace;color:var(--muted)}
+.chain{margin-top:16px;font-weight:600}.chain.ok{color:var(--tick)}.chain.bad{color:var(--red)}
+.chat{max-width:760px;padding-top:16px}
+.msg{margin:0 0 14px;padding:10px 14px;background:var(--sheet);border:1px solid var(--rule-2)}
+.msg.me{background:var(--ink);color:var(--sheet);border-color:var(--ink);width:fit-content;margin-left:auto;max-width:88%}
+.msg .src{display:block;margin-top:6px;font-size:12.5px;color:var(--muted)}
+.ask{display:flex;gap:8px;margin-top:8px} .ask input{flex:1;border:1px solid var(--ink);padding:9px 12px;border-radius:3px;background:#fff}
+.sugg{display:flex;gap:8px;flex-wrap:wrap;margin:10px 0}
+.sugg button{border:1px solid var(--rule);background:var(--sheet);padding:5px 11px;border-radius:3px;cursor:pointer}
+.toast{position:fixed;left:50%;bottom:22px;transform:translateX(-50%);background:var(--ink);color:var(--sheet);padding:10px 16px;border-radius:3px;display:none;z-index:9}
+.toast.on{display:block}
+@media (max-width:720px){
+  table.ex .hide-s{display:none}
+  table.ex td,table.ex th{padding-left:7px;padding-right:7px}
+  .t-sub{max-width:34ch}
+  .stat{min-width:120px}
+  .tabs .tools{margin-left:0}
+}
+@media (prefers-reduced-motion:reduce){
+  .tick path{animation:none;stroke-dashoffset:0} .drawer,.scrim{transition:none}
+}
+</style>
+</head>
+<body>
+<header class="bar">
+  <div class="brand">Recon<i>Pilot</i></div>
+  <div class="seg" role="group" aria-label="Data source">
+    <button id="src-demo" aria-pressed="true">Demo data</button>
+    <button id="src-sandbox" aria-pressed="false">PayPal sandbox</button>
+    <button id="src-upload" aria-pressed="false">Your CSV</button>
+  </div>
+  <button class="btn" id="run">Run reconciliation</button>
+  <div class="spacer"></div>
+  <div class="mode" id="mode" aria-live="polite"></div>
+</header>
+<section class="upl" id="upl" aria-label="Upload your own books and bank statement">
+  <label><span><b>Books</b> (ledger CSV)</span><input type="file" id="f-ledger" accept=".csv,text/csv"></label>
+  <label><span><b>Bank statement</b> (CSV)</span><input type="file" id="f-bank" accept=".csv,text/csv"></label>
+  <label><span><b>PayPal side</b></span>
+    <select id="f-pp"><option value="demo">Demo transactions</option><option value="sandbox">PayPal sandbox (live)</option></select></label>
+  <p class="hint">Columns are detected from the header: date, reference, amount (fee, customer and type are optional) for books; date, amount or credit, description for the bank.
+    No sample at hand? Download <a href="/api/sample/ledger.csv" download>sample books</a> and <a href="/api/sample/bank.csv" download>sample bank statement</a>, upload both with Demo transactions, and you get the demo result back. Files are read in memory and not stored.</p>
+</section>
+
+<main>
+  <section class="tie" aria-labelledby="h1">
+    <h1 id="h1">Does PayPal, your books and your bank agree?</h1>
+    <p class="sub" id="sub">Run a reconciliation to tie every PayPal payout to the bank deposit and to what your books recorded.</p>
+    <div class="tape" id="tape"></div>
+    <div class="resid" id="resid"></div>
+  </section>
+  <section class="stats" id="stats" aria-label="Summary"></section>
+
+  <div class="wrap">
+    <div class="tabs" role="tablist">
+      <button role="tab" id="tab-ex" aria-selected="true">Exceptions</button>
+      <button role="tab" id="tab-audit" aria-selected="false">Audit trail</button>
+      <button role="tab" id="tab-ask" aria-selected="false">Ask about this run</button>
+      <div class="tools">
+        <a class="btn ghost" href="/api/export/journal.csv" download>Approved journal (CSV)</a>
+        <a class="btn ghost" href="/api/export/exceptions.csv" download>Exceptions (CSV)</a>
+      </div>
+    </div>
+    <div id="panel"></div>
+  </div>
+</main>
+
+<div class="scrim" id="scrim"></div>
+<aside class="drawer" id="drawer" role="dialog" aria-modal="true" aria-label="Exception detail"></aside>
+<div class="toast" id="toast" role="status"></div>
+
+<script>
+"use strict";
+const $ = (s, r = document) => r.querySelector(s);
+const esc = (v) => String(v ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const fmt = (c) => { if (c == null) return "—"; const s = (Math.abs(c) / 100).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }); return c < 0 ? `(${s})` : s; };
+const usd = (c) => (c < 0 ? "-$" : "$") + (Math.abs(c) / 100).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const dshort = (s) => new Date(s).toLocaleDateString("en-GB", { day: "numeric", month: "short" });
+const dlong = (s) => new Date(s).toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" });
+let ANIM = true;
+const TICK = (i) => `<svg class="tick" viewBox="0 0 20 20" aria-hidden="true" style="--i:${i}"><path d="M3 10.5l4.5 4.5L17 5"${ANIM ? "" : ' style="animation:none;stroke-dashoffset:0"'}/></svg>`;
+const TYPE_LABEL = { sale: "Sale", refund: "Refund", dispute_hold: "Dispute hold" };
+
+const S = { src: "demo", res: null, tab: "ex", sev: "all", stat: "all", open: null, chat: [] };
+
+async function api(path, opts) {
+  const r = await fetch(path, opts);
+  if (!r.ok) { let m = r.statusText; try { m = (await r.json()).detail || m; } catch (e) {} throw new Error(m); }
+  return r.json();
+}
+function toast(msg) { const t = $("#toast"); t.textContent = msg; t.classList.add("on"); clearTimeout(toast.t); toast.t = setTimeout(() => t.classList.remove("on"), 3800); }
+
+async function health() {
+  try {
+    const h = await api("/api/health");
+    const ai = h.ai === "offline" ? "rule-based explanations (no AI key set)" : h.ai;
+    $("#mode").innerHTML = `AI: <b>${esc(ai)}</b> &nbsp; PayPal sandbox: <b>${h.paypal_sandbox_configured ? "connected" : "not configured"}</b>`;
+    return h;
+  } catch (e) { $("#mode").textContent = "Server unreachable"; return null; }
+}
+
+async function load() {
+  try { S.res = await api("/api/result"); } catch (e) { S.res = null; }
+  render();
+}
+async function readFile(id, label) {
+  const f = $(id).files[0];
+  if (!f) throw new Error(`Choose a ${label} CSV file first.`);
+  if (f.size > 2000000) throw new Error(`${label} file is larger than 2 MB. Split it by month.`);
+  return await f.text();
+}
+async function run() {
+  const b = $("#run"); b.disabled = true; b.textContent = "Reconciling…";
+  try {
+    if (S.src === "upload") {
+      const body = { ledger_csv: await readFile("#f-ledger", "books"), bank_csv: await readFile("#f-bank", "bank statement"), paypal: $("#f-pp").value };
+      await api("/api/run/upload", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+    } else {
+      await api("/api/run", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ source: S.src }) });
+    }
+    await load();
+  } catch (e) { toast(e.message); }
+  b.disabled = false; b.textContent = "Run reconciliation";
+}
+
+function render() { renderTie(); renderStats(); renderPanel(); }
+
+function renderTie() {
+  const r = S.res, tape = $("#tape"), resid = $("#resid"), sub = $("#sub");
+  if (!r) { tape.innerHTML = ""; resid.innerHTML = ""; return; }
+  const s = r.summary;
+  ANIM = S.animFor !== r.generated_at; S.animFor = r.generated_at;
+  sub.textContent = `${r.meta.paypal}; books: ${r.meta.books}${r.meta.bank ? "; bank: " + r.meta.bank : ""}. Period ${dshort(r.period.start)} to ${dshort(r.period.end)} 2026.`;
+  let rows = "", i = 0;
+  for (const p of r.payouts) {
+    const off = p.bank_variance;
+    const n = r.exceptions.filter((x) => x.payout_id === p.id && x.impact != null).length;
+    const bankCell = p.bank_actual == null ? `<td class="num off">missing<small>no deposit found</small></td>`
+      : off ? `<td class="num off">${fmt(p.bank_actual)}<small>${off < 0 ? "short" : "over"} by ${fmt(Math.abs(off))}</small></td>`
+      : `<td class="num">${TICK(i++)}${fmt(p.bank_actual)}</td>`;
+    const gapNote = p.ledger_gap === 0 ? `Books agree with PayPal`
+      : `Books differ by ${fmt(p.ledger_gap)}; explained by ${n} exception${n === 1 ? "" : "s"}${p.residual === 0 ? "" : `, ${fmt(p.residual)} unexplained`}`;
+    rows += `<tr><td class="id">${esc(p.id)}<small>${esc(dlong(p.date))}, ${p.txn_count} transactions</small></td>
+      <td class="num">${fmt(p.paypal_expected)}</td>${bankCell}<td class="num">${fmt(p.ledger_implied)}</td><td class="gapnote">${esc(gapNote)}</td></tr>`;
+  }
+  rows += `<tr class="transit"><td>In transit, not yet paid out</td><td class="num">${fmt(s.in_transit)}</td><td class="num">—</td><td class="num">—</td><td class="gapnote">Counted in the next payout</td></tr>`;
+  const tp = s.payouts_paypal_total, tb = s.payouts_bank_total;
+  const tl = r.payouts.reduce((a, p) => a + p.ledger_implied, 0);
+  tape.innerHTML = `<table><thead><tr><th>Payout</th><th>PayPal sent</th><th>Bank received</th><th>Books imply</th><th style="text-align:left">Difference</th></tr></thead>
+    <tbody>${rows}</tbody><tfoot><tr class="sum"><td>Total (USD)</td><td class="num">${fmt(tp)}</td><td class="num">${fmt(tb)}</td><td class="num">${fmt(tl)}</td><td></td></tr></tfoot></table>`;
+  const ok = s.unexplained_residual === 0;
+  resid.innerHTML = `<b>${ok ? TICK(4) : ""}${usd(s.unexplained_residual)}</b><span>${ok
+    ? "unexplained. Every dollar of difference between PayPal and the books traces to a listed exception."
+    : "unexplained. Some differences are not covered by any exception; review the payout rows above."}</span>`;
+}
+
+function renderStats() {
+  const r = S.res, el = $("#stats");
+  if (!r) { el.innerHTML = ""; return; }
+  const s = r.summary, d = Object.keys(S.decisionsMap()).length;
+  el.innerHTML = `
+    <div class="stat"><b>${s.auto_match_rate}%</b><span>${s.matched_count} of ${s.txn_count} transactions matched cleanly</span></div>
+    <div class="stat red"><b>${s.exception_count}</b><span>exceptions to review (${s.by_severity.high || 0} high)</span></div>
+    <div class="stat"><b>${usd(s.amount_at_risk)}</b><span>touched by exceptions</span></div>
+    <div class="stat"><b>${d} of ${s.exception_count}</b><span>reviewed by a person</span></div>`;
+}
+S.decisionsMap = () => Object.fromEntries((S.res?.exceptions || []).filter((x) => x.status !== "open").map((x) => [x.id, x.status]));
+
+function renderPanel() {
+  for (const [id, key] of [["tab-ex", "ex"], ["tab-audit", "audit"], ["tab-ask", "ask"]]) $("#" + id).setAttribute("aria-selected", S.tab === key);
+  if (!S.res) { $("#panel").innerHTML = `<p class="empty">No run yet. Choose a source and press Run reconciliation.</p>`; return; }
+  if (S.tab === "ex") return panelEx();
+  if (S.tab === "audit") return panelAudit();
+  return panelAsk();
+}
+
+function panelEx() {
+  const all = S.res.exceptions;
+  const list = all.filter((x) => (S.sev === "all" || x.severity === S.sev) && (S.stat === "all" || x.status === S.stat));
+  const f = (grp, key, opts) => opts.map(([v, l]) => `<button class="chip" data-f="${grp}" data-v="${v}" aria-pressed="${S[key] === v}">${l}</button>`).join("");
+  const rows = list.map((x) => `<tr tabindex="0" data-id="${esc(x.id)}">
+      <td class="sev"><i class="sev-${esc(x.severity)}"></i></td>
+      <td class="id">${esc(x.id)}</td>
+      <td><div class="t-main">${esc(x.title)}</div><div class="t-sub">${esc(x.reason)}</div></td>
+      <td class="hide-s">${esc(x.payout_id || "—")}</td>
+      <td class="num">${fmt(x.amount)}</td>
+      <td class="hide-s"><span class="sevtxt">${esc(x.severity)}</span></td>
+      <td><span class="stamp ${esc(x.status)}">${esc(x.status)}</span></td></tr>`).join("");
+  $("#panel").innerHTML = `<div class="filters"><span>Severity</span>${f("sev", "sev", [["all", "All"], ["high", "High"], ["medium", "Medium"], ["low", "Low"]])}
+      <span style="margin-left:14px">Status</span>${f("stat", "stat", [["all", "All"], ["open", "Open"], ["approved", "Approved"], ["rejected", "Rejected"], ["escalated", "Escalated"]])}</div>
+    ${list.length ? `<div class="xs"><table class="ex"><thead><tr><th></th><th>ID</th><th>Issue</th><th class="hide-s">Payout</th><th class="num">Amount (USD)</th><th class="hide-s">Severity</th><th>Status</th></tr></thead><tbody>${rows}</tbody></table></div>`
+      : `<p class="empty">Nothing matches these filters.</p>`}`;
+}
+
+async function panelAudit() {
+  $("#panel").innerHTML = `<p class="empty">Loading…</p>`;
+  const a = await api("/api/audit");
+  const rows = [...a.entries].reverse().map((e) => `<tr><td>${e.seq}</td><td>${esc(new Date(e.ts).toLocaleTimeString())}</td><td>${esc(e.actor)}</td><td>${esc(e.action)}</td><td>${esc(e.target)}</td>
+    <td>${esc(e.detail.note || e.detail.type || e.detail.source || "")}</td><td><code>${esc(e.hash.slice(0, 10))}</code></td></tr>`).join("");
+  $("#panel").innerHTML = `<div class="chain ${a.verify.ok ? "ok" : "bad"}">${a.verify.ok ? `Chain intact: ${a.verify.checked} entries, each hash covers the one before it.` : `Chain broken at entry ${a.verify.broken_at}.`}</div>
+    <table class="audit"><thead><tr><th>#</th><th>Time</th><th>Who</th><th>Action</th><th>Target</th><th>Detail</th><th>Hash</th></tr></thead><tbody>${rows}</tbody></table>`;
+}
+
+function panelAsk() {
+  const msgs = S.chat.map((m) => `<div class="msg ${m.me ? "me" : ""}">${esc(m.text)}${m.src ? `<span class="src">${esc(m.src)}</span>` : ""}</div>`).join("");
+  $("#panel").innerHTML = `<div class="chat">${msgs || `<p class="note">Ask in plain language. Answers use only this run's data and cite exception IDs.</p>`}
+    <div class="sugg">${["What should I fix first?", "Which refunds are missing from the books?", "Why is the bank short?", "Any open disputes?"].map((q) => `<button data-q="${esc(q)}">${esc(q)}</button>`).join("")}</div>
+    <form class="ask" id="askf"><input id="q" placeholder="Ask a question" maxlength="500" aria-label="Question"><button class="btn">Ask</button></form></div>`;
+}
+async function ask(q) {
+  S.chat.push({ me: true, text: q }); panelAsk();
+  try { const a = await api("/api/chat", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ question: q }) });
+    S.chat.push({ text: a.answer, src: `${a.source === "rules" ? "Rule-based answer" : a.source}${a.cited.length ? "; cites " + a.cited.join(", ") : ""}${a.unverified_ids?.length ? "; unverified IDs: " + a.unverified_ids.join(", ") : ""}` });
+  } catch (e) { S.chat.push({ text: e.message }); }
+  panelAsk();
+}
+
+/* ---------- drawer ---------- */
+async function openEx(id) {
+  S.open = id;
+  const x = await api("/api/exceptions/" + id);
+  drawer(x, null);
+  $("#drawer").classList.add("on"); $("#scrim").classList.add("on"); $("#drawer").querySelector(".x").focus();
+  try { const ai = await api(`/api/exceptions/${id}/explain`, { method: "POST" }); if (S.open === id) drawer(x, ai); } catch (e) { if (S.open === id) drawer(x, { error: e.message }); }
+}
+function closeEx() { S.open = null; $("#drawer").classList.remove("on"); $("#scrim").classList.remove("on"); }
+
+function evTables(ev) {
+  let h = "";
+  if (ev.paypal.length) h += `<table class="ev"><caption>PayPal</caption><tr><th>Date</th><th>Txn</th><th>Type</th><th class="num">Gross</th><th class="num">Fee</th><th>Ref</th></tr>${ev.paypal.map((t) =>
+    `<tr><td>${esc(dshort(t.date))}</td><td>${esc(t.id.slice(-6))}</td><td>${esc(TYPE_LABEL[t.type] || t.type)}</td><td class="num">${fmt(t.gross)}</td><td class="num">${fmt(t.fee)}</td><td>${esc(t.invoice_ref || "—")}</td></tr>`).join("")}</table>`;
+  if (ev.ledger.length) h += `<table class="ev"><caption>Books</caption><tr><th>Date</th><th>Entry</th><th>Type</th><th>Ref</th><th class="num">Amount</th><th class="num">Fee booked</th></tr>${ev.ledger.map((e) =>
+    `<tr><td>${esc(dshort(e.date))}</td><td>${esc(e.id)}</td><td>${esc(e.type)}</td><td>${esc(e.ref)}</td><td class="num">${fmt(e.amount)}</td><td class="num">${fmt(e.fee_booked)}</td></tr>`).join("")}</table>`;
+  if (ev.bank.length) h += `<table class="ev"><caption>Bank</caption><tr><th>Date</th><th>Line</th><th>Memo</th><th class="num">Amount</th></tr>${ev.bank.map((b) =>
+    `<tr><td>${esc(dshort(b.date))}</td><td>${esc(b.id)}</td><td>${esc(b.memo || "")}</td><td class="num">${fmt(b.amount)}</td></tr>`).join("")}</table>`;
+  return h || `<p class="note">No linked records.</p>`;
+}
+function jeTable(j) {
+  if (!j) return `<p class="note">This exception needs investigation, so no journal entry is proposed.</p>`;
+  const d = j.lines.reduce((a, l) => a + l.debit, 0), c = j.lines.reduce((a, l) => a + l.credit, 0);
+  return `<p style="margin:0 0 6px">${esc(j.description)}</p><table class="je"><thead><tr><th>Account</th><th class="num">Debit</th><th class="num">Credit</th></tr></thead><tbody>${j.lines.map((l) =>
+    `<tr><td class="${l.credit ? "cr" : ""}">${esc(l.account)} ${esc(l.name)}</td><td class="num">${l.debit ? fmt(l.debit) : ""}</td><td class="num">${l.credit ? fmt(l.credit) : ""}</td></tr>`).join("")}</tbody>
+    <tfoot><tr><td>Total</td><td class="num">${fmt(d)}</td><td class="num">${fmt(c)}</td></tr></tfoot></table>
+    <p class="bal">${d === c ? "Debits equal credits. Entry is balanced." : "Entry is not balanced."}</p>`;
+}
+function aiSummary(x, ai) {
+  let t = ai.summary || "";
+  if (ai.source === "rules" && t.startsWith(x.reason)) t = t.slice(x.reason.length).trim();
+  return t ? `<p>${esc(t)}</p>` : "";
+}
+function drawer(x, ai) {
+  const dec = x.decision;
+  let aiHtml = `<div class="ai"><p class="note">Analysing…</p></div>`;
+  if (ai && ai.error) aiHtml = `<div class="ai"><p>The explanation could not be loaded: ${esc(ai.error)}</p></div>`;
+  else if (ai) aiHtml = `<div class="ai">${aiSummary(x, ai)}<p><span class="tag">${esc(String(ai.root_cause).replace(/_/g, " "))}</span> <b>Next step:</b> ${esc(ai.recommended_action)}</p>
+    <div class="src">${ai.source === "rules" ? "Rule-based explanation" : "Written by " + esc(ai.source)}; confidence ${Math.round(ai.confidence * 100)}%.${ai.note ? " " + esc(ai.note) : ""} A person decides; this text changes nothing.</div></div>`;
+  const decided = dec ? `<div class="decided"><span class="stamp ${esc(dec.status)}">${esc(dec.status)}</span> by ${esc(dec.actor)}${dec.note ? `: ${esc(dec.note)}` : ""}
+      <div class="acts"><button class="btn ghost" data-act="reopen">Reopen</button></div></div>`
+    : `<textarea id="note" placeholder="Note for the audit trail (optional)" maxlength="500" aria-label="Note"></textarea>
+      <div class="acts"><button class="btn good" data-act="approve">${x.journal ? "Approve entry" : "Approve"}</button><button class="btn bad" data-act="reject">Reject</button><button class="btn ghost" data-act="escalate">Escalate</button></div>`;
+  $("#drawer").innerHTML = `<button class="x" aria-label="Close" id="close">×</button>
+    <div class="id">${esc(x.id)} &nbsp; <span class="sevtxt" style="color:var(--${x.severity === "high" ? "red" : x.severity === "medium" ? "amber" : "slate"})">${esc(x.severity)} severity</span></div>
+    <h2>${esc(x.title)}</h2><div class="amt">${usd(x.amount)}</div>
+    <h3>What happened</h3><p style="margin:0">${esc(x.reason)}</p>
+    <h3>AI analysis</h3>${aiHtml}
+    <h3>Evidence</h3>${evTables(x.evidence)}
+    <h3>Proposed journal entry</h3>${jeTable(x.journal)}
+    <h3>Your decision</h3>${decided}`;
+}
+async function decide(act) {
+  const id = S.open; if (!id) return;
+  const note = $("#note")?.value || "";
+  try {
+    await api(`/api/exceptions/${id}/decision`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ decision: act, note, actor: "reviewer" }) });
+    await load(); const x = await api("/api/exceptions/" + id); drawer(x, await api(`/api/exceptions/${id}/explain`, { method: "POST" }).catch(() => null));
+    toast(act === "approve" ? "Approved. The journal line is in the CSV export." : act === "reopen" ? "Reopened." : act === "reject" ? "Rejected." : "Escalated.");
+  } catch (e) { toast(e.message); }
+}
+
+/* ---------- events ---------- */
+document.addEventListener("click", (e) => {
+  const t = e.target;
+  if (t.closest("#close") || t.id === "scrim") return closeEx();
+  const row = t.closest("tr[data-id]"); if (row) return openEx(row.dataset.id);
+  const chip = t.closest("[data-f]"); if (chip) { S[chip.dataset.f] = chip.dataset.v; return renderPanel(); }
+  const act = t.closest("[data-act]"); if (act) return decide(act.dataset.act);
+  const q = t.closest("[data-q]"); if (q) return ask(q.dataset.q);
+});
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape") closeEx();
+  if (e.key === "Enter" && e.target.matches("tr[data-id]")) openEx(e.target.dataset.id);
+});
+document.addEventListener("submit", (e) => { if (e.target.id === "askf") { e.preventDefault(); const q = $("#q").value.trim(); if (q) ask(q); } });
+$("#run").onclick = run;
+for (const k of ["demo", "sandbox", "upload"]) $("#src-" + k).onclick = () => {
+  S.src = k;
+  for (const j of ["demo", "sandbox", "upload"]) $("#src-" + j).setAttribute("aria-pressed", j === k);
+  $("#upl").classList.toggle("on", k === "upload");
+};
+for (const [id, k] of [["tab-ex", "ex"], ["tab-audit", "audit"], ["tab-ask", "ask"]]) $("#" + id).onclick = () => { S.tab = k; renderPanel(); };
+
+(async () => { const h = await health(); if (h && h.has_run) await load(); else await run(); })();
+</script>
+</body>
+</html>
