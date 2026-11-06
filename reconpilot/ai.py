@@ -48,6 +48,32 @@ CHAT_SYSTEM = (
 )
 
 
+DISPUTE_SYSTEM = (
+    "You draft a reply a business can send to PayPal about a customer dispute. Use ONLY the facts in the JSON. "
+    "Never invent delivery details, tracking numbers, names, dates or amounts. Where evidence the business must "
+    "supply is unknown (proof of delivery, customer messages), write a bracketed placeholder such as "
+    "[attach proof of delivery]. The text must mention the invoice reference and the original transaction id "
+    "exactly as given. You are only writing a draft for a person to review; never say it was sent. "
+    'Reply with ONE JSON object and nothing else, with keys "subject" and "body" (plain text, max 220 words).'
+)
+
+
+def rule_dispute_draft(f: dict) -> dict:
+    books = (f"Our books record this sale as entry {f['books_entry_id']} for {f['books_amount']} on {f['books_date']}."
+             if f.get("books_entry_id") else "Our books have an entry for this sale.")
+    body = (f"Hello PayPal Resolution Team,\n\n"
+            f"We are responding to the dispute on invoice {f['invoice_ref']} (original transaction {f['original_transaction_id']}), "
+            f"for which {f['amount']} is currently on hold (hold transaction {f['hold_transaction_id']}, {f['hold_date']}).\n\n"
+            f"The sale was completed on {f['sale_date']} for {f['sale_gross']}. {books}\n\n"
+            f"Evidence we are providing:\n"
+            f"- [attach proof of delivery or fulfilment]\n"
+            f"- [attach customer communication, if any]\n"
+            f"- [attach terms or refund policy shown at checkout]\n\n"
+            f"Please review the evidence and release the held funds. We are glad to supply anything further.\n\n"
+            f"Regards,\n[your name and business]")
+    return {"subject": f"Dispute response: invoice {f['invoice_ref']}", "body": body, "source": "template"}
+
+
 def _token(name: str | None) -> str | None:
     if not name:
         return None
@@ -186,6 +212,23 @@ class AIClient:
             if self.provider != "offline":
                 out["note"] = "Model unavailable or returned an invalid response; showing rule-based explanation."
         self._cache[key] = out
+        return out
+
+    def dispute_draft(self, facts: dict) -> dict:
+        """Draft only. Facts contain no customer name. Output must cite the invoice ref and transaction id."""
+        if self.provider != "offline":
+            try:
+                text = self._complete(DISPUTE_SYSTEM, json.dumps(facts), 700)
+                obj = _parse_json(text)
+                if (isinstance(obj, dict) and isinstance(obj.get("subject"), str) and isinstance(obj.get("body"), str)
+                        and facts["invoice_ref"] in obj["body"] and facts["original_transaction_id"] in obj["body"]):
+                    return {"subject": obj["subject"].strip()[:200], "body": obj["body"].strip()[:3000],
+                            "source": self.mode}
+            except (httpx.HTTPError, KeyError, IndexError, ValueError):
+                pass
+        out = rule_dispute_draft(facts)
+        if self.provider != "offline":
+            out["note"] = "Model unavailable or its draft left out the invoice or transaction id; showing the template."
         return out
 
     def chat(self, question: str, result: dict, decisions: dict) -> dict:

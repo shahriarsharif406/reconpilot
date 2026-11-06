@@ -37,7 +37,7 @@ a{color:inherit}
 .btn.bad:hover{background:#f6e3e1}
 .spacer{flex:1}
 .upl{display:none;flex-wrap:wrap;gap:12px 22px;align-items:flex-end;padding:14px clamp(16px,4vw,44px);background:var(--paper);border-bottom:1px solid var(--rule)}
-.upl.on{display:flex}
+.upl.on{display:flex} .upl [hidden]{display:none}
 .upl label{display:flex;flex-direction:column;gap:4px;font-size:13px;color:var(--muted);min-width:0}
 .upl label span b{color:var(--ink);font-weight:600}
 .upl input[type=file]{font-size:13px;max-width:100%}
@@ -169,7 +169,8 @@ textarea{width:100%;min-height:64px;border:1px solid var(--rule);border-radius:3
   <label><span><b>Books</b> (ledger CSV)</span><input type="file" id="f-ledger" accept=".csv,text/csv"></label>
   <label><span><b>Bank statement</b> (CSV)</span><input type="file" id="f-bank" accept=".csv,text/csv"></label>
   <label><span><b>PayPal side</b></span>
-    <select id="f-pp"><option value="demo">Demo transactions</option><option value="sandbox">PayPal sandbox (live)</option></select></label>
+    <select id="f-pp"><option value="demo">Demo transactions</option><option value="sandbox">PayPal sandbox (live)</option><option value="csv">My PayPal activity CSV</option></select></label>
+  <label id="f-ppcsv-wrap" hidden><span><b>PayPal activity</b> (CSV from Reports, Activity)</span><input type="file" id="f-ppcsv" accept=".csv,text/csv"></label>
   <p class="hint">Columns are detected from the header: date, reference, amount (fee, customer and type are optional) for books; date, amount or credit, description for the bank.
     No sample at hand? Download <a href="/api/sample/ledger.csv" download>sample books</a> and <a href="/api/sample/bank.csv" download>sample bank statement</a>, upload both with Demo transactions, and you get the demo result back. Files are read in memory and not stored.</p>
 </section>
@@ -191,6 +192,7 @@ textarea{width:100%;min-height:64px;border:1px solid var(--rule);border-radius:3
       <div class="tools">
         <a class="btn ghost" href="/api/export/journal.csv" download>Approved journal (CSV)</a>
         <a class="btn ghost" href="/api/export/exceptions.csv" download>Exceptions (CSV)</a>
+        <a class="btn ghost" href="/api/report.html" target="_blank" rel="noopener">Report (print or save as PDF)</a>
       </div>
     </div>
     <div id="panel"></div>
@@ -246,6 +248,7 @@ async function run() {
   try {
     if (S.src === "upload") {
       const body = { ledger_csv: await readFile("#f-ledger", "books"), bank_csv: await readFile("#f-bank", "bank statement"), paypal: $("#f-pp").value };
+      if (body.paypal === "csv") body.paypal_csv = await readFile("#f-ppcsv", "PayPal activity");
       await api("/api/run/upload", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
     } else {
       await api("/api/run", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ source: S.src }) });
@@ -397,7 +400,20 @@ function drawer(x, ai) {
     <h3>AI analysis</h3>${aiHtml}
     <h3>Evidence</h3>${evTables(x.evidence)}
     <h3>Proposed journal entry</h3>${jeTable(x.journal)}
+    ${x.type === "DISPUTE_OPEN" ? `<h3>Reply to PayPal</h3><p class="note" style="margin:0 0 8px">A draft built only from this run's facts. Fill the bracketed parts yourself. Nothing is sent.</p>
+      <div id="dd"><button class="btn ghost" data-act2="draft">Draft a reply</button></div>` : ""}
     <h3>Your decision</h3>${decided}`;
+}
+async function draftReply() {
+  const id = S.open, box = $("#dd"); if (!id || !box) return;
+  box.innerHTML = `<p class="note">Drafting…</p>`;
+  try {
+    const d = await api(`/api/exceptions/${id}/dispute-draft`, { method: "POST" });
+    if (S.open !== id) return;
+    box.innerHTML = `<p style="margin:0 0 6px"><b>${esc(d.subject)}</b></p><textarea id="ddtext" rows="14" style="width:100%" aria-label="Draft reply to PayPal">${esc(d.body)}</textarea>
+      <div class="src">${d.source === "template" ? "Template filled from the run's facts" : "Written by " + esc(d.source)}.${d.note ? " " + esc(d.note) : ""} Review before you use it.</div>
+      <div class="acts"><button class="btn ghost" data-act2="copy">Copy text</button></div>`;
+  } catch (e) { box.innerHTML = `<p class="note">${esc(e.message)}</p><button class="btn ghost" data-act2="draft">Try again</button>`; }
 }
 async function decide(act) {
   const id = S.open; if (!id) return;
@@ -416,6 +432,8 @@ document.addEventListener("click", (e) => {
   const row = t.closest("tr[data-id]"); if (row) return openEx(row.dataset.id);
   const chip = t.closest("[data-f]"); if (chip) { S[chip.dataset.f] = chip.dataset.v; return renderPanel(); }
   const act = t.closest("[data-act]"); if (act) return decide(act.dataset.act);
+  if (t.closest("[data-act2=draft]")) return draftReply();
+  if (t.closest("[data-act2=copy]")) { const v = $("#ddtext").value; navigator.clipboard?.writeText(v).then(() => toast("Copied."), () => toast("Select the text and copy it.")); return; }
   const q = t.closest("[data-q]"); if (q) return ask(q.dataset.q);
 });
 document.addEventListener("keydown", (e) => {
@@ -424,6 +442,7 @@ document.addEventListener("keydown", (e) => {
 });
 document.addEventListener("submit", (e) => { if (e.target.id === "askf") { e.preventDefault(); const q = $("#q").value.trim(); if (q) ask(q); } });
 $("#run").onclick = run;
+$("#f-pp").onchange = () => { $("#f-ppcsv-wrap").hidden = $("#f-pp").value !== "csv"; };
 for (const k of ["demo", "sandbox", "upload"]) $("#src-" + k).onclick = () => {
   S.src = k;
   for (const j of ["demo", "sandbox", "upload"]) $("#src-" + j).setAttribute("aria-pressed", j === k);

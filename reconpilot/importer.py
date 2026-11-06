@@ -177,3 +177,77 @@ def bank_to_csv(lines: list[dict]) -> str:
     for b in lines:
         w.writerow([b["date"][:10], f"{b['amount'] / 100:.2f}", b.get("memo") or ""])
     return buf.getvalue()
+
+
+# ---------------------------------------------------------------------------------------
+# PayPal "Activity" report (Reports > Activity > Download). Column names follow PayPal's
+# documented report; they are matched by name, case-insensitively, so extra columns are fine.
+PAYPAL_ALIASES = {
+    "date": ["date"], "time": ["time"], "name": ["name"], "type": ["type", "description"],
+    "status": ["status"], "currency": ["currency"], "gross": ["gross"], "fee": ["fee"],
+    "id": ["transaction id", "transaction_id"], "ref_id": ["reference txn id", "reference transaction id"],
+    "invoice": ["invoice number", "invoice id", "invoice"],
+}
+
+
+def _paypal_kind(ptype: str, gross: int) -> str | None:
+    t = ptype.lower()
+    if any(w in t for w in ("withdrawal", "transfer to", "conversion", "authorization", "order", "currency")):
+        return None
+    if "refund" in t:
+        return "refund"
+    if any(w in t for w in ("hold on balance", "chargeback", "reversal", "dispute")):
+        return "dispute_hold" if gross < 0 else None
+    if gross > 0 and "payment" in t:
+        return "sale"
+    return None
+
+
+def parse_paypal_activity(text: str) -> tuple[list[dict], dict]:
+    headers, rows = _rows(text, "PayPal activity")
+    normed = [_norm(h) for h in headers]
+
+    def idx(key):
+        for n in PAYPAL_ALIASES[key]:
+            if n in normed:
+                return normed.index(n)
+        return None
+    col = {k: idx(k) for k in PAYPAL_ALIASES}
+    missing = [k for k in ("date", "type", "gross", "id") if col[k] is None]
+    if missing:
+        raise ImportProblem("PayPal activity file: could not find column(s) " + ", ".join(missing) +
+                            f". Found columns: {', '.join(headers)}. Download it from PayPal under Reports, Activity.")
+    txns, skipped = [], 0
+    for ln, r in rows:
+        def cell(k):
+            i = col[k]
+            return r[i].strip() if i is not None and i < len(r) else ""
+        status = cell("status")
+        if status and status.lower() != "completed":
+            skipped += 1
+            continue
+        cur = cell("currency")
+        if cur and cur.upper() != "USD":
+            raise ImportProblem(f"PayPal activity file, line {ln}: currency {cur}. Only USD is supported in this version.")
+        try:
+            gross = parse_amount(cell("gross"))
+            fee_csv = parse_amount(cell("fee")) if cell("fee") else 0
+            day = parse_date(cell("date"))[:10]
+        except ValueError as exc:
+            raise ImportProblem(f"PayPal activity file, line {ln}: {exc}")
+        clock = cell("time") if re.fullmatch(r"\d{1,2}:\d{2}(:\d{2})?", cell("time") or "") else "00:00:00"
+        if clock.count(":") == 1:
+            clock += ":00"
+        kind = _paypal_kind(cell("type"), gross)
+        if kind is None or not cell("id"):
+            skipped += 1
+            continue
+        txns.append({"id": cell("id"), "date": f"{day}T{clock.zfill(8)}", "type": kind, "gross": gross,
+                     "fee": -fee_csv,  # PayPal shows fees as negative numbers; the engine keeps them positive
+                     "customer": cell("name") or None, "invoice_ref": cell("invoice") or None,
+                     "original_id": cell("ref_id") or None, "payout_id": None})
+    if not any(t["type"] == "sale" for t in txns):
+        raise ImportProblem("PayPal activity file: no completed payments were found.")
+    txns.sort(key=lambda t: t["date"])
+    return txns, {"rows": len(txns), "skipped": skipped,
+                  "start": txns[0]["date"][:10], "end": txns[-1]["date"][:10]}

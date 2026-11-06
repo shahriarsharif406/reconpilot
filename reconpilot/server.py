@@ -8,14 +8,15 @@ import os
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
-from fastapi.responses import FileResponse, PlainTextResponse
+from fastapi.responses import FileResponse, HTMLResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from . import datagen, importer
 from .ai import AIClient
 from .audit import AuditLog
-from .engine import money, reconcile
+from .engine import money, norm_ref, reconcile
+from .report import build_report
 from .paypal_client import PayPalError, PayPalSandbox
 
 STATIC = Path(__file__).parent / "static"
@@ -30,7 +31,8 @@ class RunBody(BaseModel):
 class UploadBody(BaseModel):
     ledger_csv: str = Field(min_length=1, max_length=2_000_000)
     bank_csv: str = Field(min_length=1, max_length=2_000_000)
-    paypal: str = Field("demo", pattern="^(demo|sandbox)$")
+    paypal: str = Field("demo", pattern="^(demo|sandbox|csv)$")
+    paypal_csv: str = Field("", max_length=4_000_000)
     seed: int = 42
 
 
@@ -123,7 +125,19 @@ def create_app(ai: AIClient | None = None, paypal: PayPalSandbox | None = None,
             bank, bmeta = importer.parse_bank(body.bank_csv)
         except importer.ImportProblem as exc:
             raise HTTPException(422, str(exc))
-        if body.paypal == "sandbox":
+        if body.paypal == "csv":
+            if not body.paypal_csv.strip():
+                raise HTTPException(422, "Choose your PayPal activity CSV file, or pick another PayPal source.")
+            try:
+                txns, pmeta = importer.parse_paypal_activity(body.paypal_csv)
+            except importer.ImportProblem as exc:
+                raise HTTPException(422, str(exc))
+            start, end = dt.date.fromisoformat(pmeta["start"]), dt.date.fromisoformat(pmeta["end"])
+            payouts = datagen.assign_payouts(txns, start, end)
+            payouts = [p for p in payouts if any(t.get("payout_id") == p["id"] for t in txns)]
+            pp = {"paypal": txns, "payouts": payouts, "period": {"start": start.isoformat(), "end": end.isoformat()}}
+            extra, paypal_label = {"paypal_skipped_rows": pmeta["skipped"]}, f"your PayPal activity CSV ({pmeta['rows']} transactions)"
+        elif body.paypal == "sandbox":
             pp, extra = sandbox_paypal(body.seed)
             paypal_label = "PayPal sandbox (live API)"
         else:
@@ -136,6 +150,32 @@ def create_app(ai: AIClient | None = None, paypal: PayPalSandbox | None = None,
         meta = {"source": "upload", "paypal": paypal_label, "books": books,
                 "bank": f"your CSV ({bmeta['rows']} deposits)", "skipped_rows": lmeta["skipped"] + bmeta["skipped"], **extra}
         return finish_run(data, meta)
+
+    @app.post("/api/exceptions/{ex_id}/dispute-draft")
+    def dispute_draft(ex_id: str):
+        x = find(ex_id)
+        if x["type"] != "DISPUTE_OPEN":
+            raise HTTPException(400, "Dispute drafts are only available for open-dispute exceptions.")
+        hold = x["evidence"]["paypal"][0]
+        pp = {t["id"]: t for t in state["data"]["paypal"]}
+        sale = pp.get(hold.get("original_id")) or {}
+        ref = hold.get("invoice_ref") or sale.get("invoice_ref") or hold["id"]
+        entry = next((e for e in state["data"]["ledger"] if e["type"] == "sale" and norm_ref(e["ref"]) == norm_ref(ref)), None)
+        facts = {"invoice_ref": ref, "hold_transaction_id": hold["id"],
+                 "original_transaction_id": sale.get("id") or hold.get("original_id") or hold["id"],
+                 "amount": money(x["amount"]), "hold_date": hold["date"][:10],
+                 "sale_date": (sale.get("date") or hold["date"])[:10], "sale_gross": money(sale.get("gross", x["amount"])),
+                 "books_entry_id": entry["id"] if entry else None, "books_amount": money(entry["amount"]) if entry else None,
+                 "books_date": entry["date"][:10] if entry else None}
+        out = ai.dispute_draft(facts)
+        audit.append("ai", "dispute_draft", ex_id, {"source": out["source"]})
+        return out
+
+    @app.get("/api/report.html", response_class=HTMLResponse)
+    def report():
+        r = need_result()
+        audit.append("system", "report", "report.html", {})
+        return HTMLResponse(build_report(r, state, audit.verify(), len(audit.entries)))
 
     @app.get("/api/sample/ledger.csv", response_class=PlainTextResponse)
     def sample_ledger():

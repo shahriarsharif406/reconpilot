@@ -68,11 +68,17 @@ The header shows which model is active. Default model: `claude-sonnet-5-5` (over
    ```
 4. In the UI choose **PayPal sandbox** and press **Run reconciliation**. Sandbox activity can take a while to appear in Transaction Search.
 
+### Dispute replies and the printable report
+
+On an open-dispute exception, **Draft a reply** writes a reply to PayPal from the run's facts only (invoice, transaction ids, dates, amounts, the matching books entry). Anything the business must supply, such as proof of delivery, is left as a bracketed placeholder. With an AI key the model writes it; its draft is used only if it cites the real invoice and transaction ids, otherwise a template is shown. Customer names are never sent. Nothing is sent to PayPal.
+
+**Report** (top right of the list) opens a one-page, print-friendly summary: tie-out table, every exception with its decision and note, and the audit-chain status. Use the browser's print dialog to save it as PDF.
+
 ### Use your own books and bank statement
 
 Choose **Your CSV** in the UI, pick a books file and a bank statement file, and press **Run reconciliation**. Column names are detected from the header row (date, reference, amount; fee, customer and type are optional for books; date, amount or credit, and description for the bank). Dates in `YYYY-MM-DD` or `MM/DD/YYYY`, amounts like `1,250.00`, `$12.50` or `(12.50)`. Rows that are not sales or refunds (fees, journals) and bank withdrawals are skipped and counted. A bad file returns a plain message with the line number. Files are read in memory and not stored, up to 5,000 rows each.
 
-The PayPal side can be the demo transactions or the live sandbox. To try it without your own files, download `/api/sample/ledger.csv` and `/api/sample/bank.csv`, upload both with "Demo transactions", and you get the same 18 exceptions as demo mode. If your books have no fee column, fees are assumed to match PayPal, so no fee variances are reported.
+The PayPal side can be the demo transactions, the live sandbox, or your own **PayPal activity CSV** (PayPal: Reports, Activity, Download; USD only; completed payments, refunds and dispute holds are read, withdrawals and pending rows are skipped; matched by column name, so extra columns are fine). To try it without your own files, download `/api/sample/ledger.csv` and `/api/sample/bank.csv`, upload both with "Demo transactions", and you get the same 18 exceptions as demo mode. If your books have no fee column, fees are assumed to match PayPal, so no fee variances are reported.
 
 > **What is real and what is synthetic.** In sandbox mode the PayPal side is read live from the PayPal sandbox API. PayPal does not provide your accounting books or bank statement, so those two sides are generated around the real transactions, with planted errors, and the UI says so ("books: synthetic"). Demo mode is synthetic end to end. Nothing in this repository is real customer or bank data.
 
@@ -110,6 +116,8 @@ PayPal sandbox API ──┐
 |---|---|---|
 | POST | `/api/run` | `{"source":"demo"\|"sandbox"}` run a reconciliation |
 | POST | `/api/run/upload` | `{"ledger_csv","bank_csv","paypal":"demo"\|"sandbox"}` reconcile your own CSV text |
+| POST | `/api/exceptions/{id}/dispute-draft` | Draft reply to PayPal for an open dispute (draft only) |
+| GET | `/api/report.html` | Printable reconciliation report |
 | GET | `/api/sample/ledger.csv`, `/api/sample/bank.csv` | Sample files that round-trip to the demo result |
 | GET | `/api/result` | Summary, payouts, exceptions |
 | GET | `/api/exceptions/{id}` | Full evidence and proposed journal |
@@ -127,7 +135,7 @@ pip install -r requirements-dev.txt
 pytest -q
 ```
 
-The suite (32 tests) checks that the engine finds exactly the planted defects across several random seeds, that the unexplained difference is zero, that every journal balances, that tampering with the audit trail is detected, that customer names never reach the model, that malformed model output falls back safely, and that the PayPal client works against recorded response shapes.
+The suite (42 tests) checks that the engine finds exactly the planted defects across several random seeds, that the unexplained difference is zero, that every journal balances, that tampering with the audit trail is detected, that customer names never reach the model, that malformed model output falls back safely, and that the PayPal client works against recorded response shapes.
 
 ## Deploy
 
@@ -135,6 +143,7 @@ The suite (32 tests) checks that the engine finds exactly the planted defects ac
 
 ## Limitations
 
+- The PayPal activity CSV reader is written from PayPal's documented Activity report columns (Date, Time, Name, Type, Status, Currency, Gross, Fee, Transaction ID, Reference Txn ID, Invoice Number) and tested on files built to that shape; try it with a real download and report any column that differs.
 - The PayPal client is verified against PayPal's documented response shapes with a mocked transport. Event-code mapping (`T00xx` payments, `T11xx` refunds, `T12xx` disputes) is best effort; check it against your own sandbox data.
 - Reconciliation state is held in memory. A restart clears it. Set `AUDIT_LOG_PATH` to keep a copy of the audit trail on disk.
 - In demo and sandbox modes the books and bank statement are synthetic. In **Your CSV** mode they are yours, but the PayPal side is still the demo data or the sandbox, and payouts are grouped into weekly Monday sweeps by ReconPilot (PayPal's own payout data is not read).
@@ -143,7 +152,7 @@ The suite (32 tests) checks that the engine finds exactly the planted defects ac
 
 ## Roadmap
 
-PayPal activity CSV import; push approved journals to accounting software; dispute-evidence drafting; multi-currency; scheduled daily runs with alerts.
+push approved journals to accounting software; dispute-evidence drafting; multi-currency; scheduled daily runs with alerts.
 
 ## License
 

@@ -14,7 +14,7 @@ When a business sells through PayPal, three records are supposed to agree: what 
 
 ## What it does
 - Reads PayPal transactions and groups them into payouts.
-- Reconciles your own books and bank statement from CSV files (column names detected automatically), or runs on built-in demo data.
+- Reconciles your own books, bank statement and PayPal activity from CSV files (column names detected automatically), or runs on built-in demo data or the live PayPal sandbox.
 - Ties each payout three ways: PayPal sent, bank received, books imply.
 - Finds 12 kinds of problems: unrecorded sales, transposed digits, net-instead-of-gross entries, duplicate entries, near-miss invoice references, unrecorded refunds, open disputes, wrong processing fees, duplicate customer charges, bank shortfalls, missing deposits, and unknown deposits.
 - Proves nothing is hidden: the unexplained difference is shown as one number that should be $0.00.
@@ -22,6 +22,8 @@ When a business sells through PayPal, three records are supposed to agree: what 
 - Proposes a balanced journal entry (debits equal credits, enforced in code).
 - Lets a person approve, reject or escalate with a note. Only approved entries reach the CSV export.
 - Records every action in a hash-chained audit trail that detects tampering.
+- Drafts a reply to PayPal for an open dispute from the run's facts, with placeholders for evidence the business must supply. Nothing is sent.
+- Produces a one-page printable report: tie-out, every decision, and the audit-chain status.
 - Answers questions about the run ("Which refunds are missing from the books?") using only that run's data.
 
 ## How we use PayPal
@@ -34,12 +36,13 @@ When a business sells through PayPal, three records are supposed to agree: what 
 The model is the explainer and the analyst, not the decision maker.
 1. **Explanations.** For each exception the model receives the engine's evidence (customer names replaced by tokens) and returns JSON with a summary, a root cause from a fixed list, a recommended action and a confidence. Output is validated; invalid output falls back to a rule-based explanation, labelled as such.
 2. **Grounded chat.** Reviewers ask questions in plain language. The model sees only the run's data. Any exception ID it cites is checked against the real list; invented IDs are flagged.
-3. **Guardrails.** The model cannot approve, post or edit anything. Journal arithmetic and matching are deterministic and tested.
+3. **Dispute drafts.** For an open dispute the model drafts a reply to PayPal from the run's facts only. The draft is accepted only if it cites the real invoice and transaction ids; otherwise a template is shown. A person edits and sends it.
+4. **Guardrails.** The model cannot approve, post or edit anything. Journal arithmetic and matching are deterministic and tested.
 
 Models: Anthropic Claude (default `claude-sonnet-5-5`) or Google Gemini, selected by environment key. With no key, ReconPilot runs in rule-based mode.
 
 ## How we built it
-Python 3, FastAPI, httpx, and a single-page vanilla JavaScript front end. The reconciliation engine is pure Python with money held as integer cents. The test suite (32 tests) checks the engine against planted ground truth across several random seeds. Built with Claude Code.
+Python 3, FastAPI, httpx, and a single-page vanilla JavaScript front end. The reconciliation engine is pure Python with money held as integer cents. The test suite (42 tests) checks the engine against planted ground truth across several random seeds. Built with Claude Code.
 
 ## Challenges
 - Fuzzy matching can steal another sale's entry. A missing INV-1043 looks one edit away from INV-1044 with the same amount. The fix: match exact references first, and never let a fuzzy match consume an entry whose reference belongs to another PayPal sale.
@@ -55,7 +58,7 @@ Python 3, FastAPI, httpx, and a single-page vanilla JavaScript front end. The re
 Payment reconciliation is mostly about trust: show the evidence, keep the math deterministic, and keep a person in charge of the books.
 
 ## What's next
-Import PayPal activity files, push approved journals to accounting software, draft dispute evidence, handle multiple currencies, and run daily with alerts.
+Push approved journals to accounting software, draft dispute evidence, handle multiple currencies, and run daily with alerts.
 
 ## Built with
 python, fastapi, httpx, javascript, paypal-rest-api, paypal-sandbox, anthropic-claude, google-gemini, claude-code, render
