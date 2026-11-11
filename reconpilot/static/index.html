@@ -76,6 +76,23 @@ a{color:inherit}
 .stat span{font-size:13px;color:var(--muted)}
 .stat.red b{color:var(--red)}
 
+
+/* money trail */
+.trail{background:var(--sheet);border-bottom:1px solid var(--rule);padding:22px clamp(16px,4vw,44px) 26px}
+.trail h2{margin:0;font:800 clamp(20px,2.6vw,28px)/1.1 var(--display);font-stretch:106%;letter-spacing:-.01em}
+.trail .lede{margin:6px 0 16px;color:var(--muted);max-width:70ch}
+.wf{max-width:1000px}
+.wr{display:grid;grid-template-columns:minmax(120px,250px) 1fr 108px;gap:0 14px;align-items:center;padding:7px 0;border-bottom:1px solid var(--rule-2)}
+.wr .lab{font-size:14px} .wr .lab small{display:block;color:var(--muted);font-size:12px}
+.wr .trk{position:relative;height:26px}
+.wr .bar2{position:absolute;top:5px;bottom:5px;min-width:4px;border-radius:1px}
+.wr .tot{background:var(--ink)} .wr .up{background:var(--tick)} .wr .down{background:var(--red)} .wr .un{background:var(--amber)}
+.wr .amt2{text-align:right;font-weight:600;white-space:nowrap}
+.wr .sub{font-weight:700}
+.wr .rail{position:absolute;left:0;right:0;top:50%;border-top:1px dashed var(--rule)}
+.trail .foot{margin:12px 0 0;font-size:13px;color:var(--muted);max-width:70ch}
+@media (max-width:720px){.wr{grid-template-columns:1fr 100px}.wr .trk{grid-column:1/-1;grid-row:2;height:14px}.wr .bar2{top:2px;bottom:2px}}
+
 /* tabs and content */
 .wrap{padding:0 clamp(16px,4vw,44px) 60px;max-width:1280px}
 .tabs{display:flex;gap:26px;border-bottom:1px solid var(--rule);margin-top:22px;flex-wrap:wrap;align-items:flex-end}
@@ -183,6 +200,7 @@ textarea{width:100%;min-height:64px;border:1px solid var(--rule);border-radius:3
     <div class="resid" id="resid"></div>
   </section>
   <section class="stats" id="stats" aria-label="Summary"></section>
+  <section class="trail" id="trail" aria-labelledby="h-trail" hidden></section>
 
   <div class="wrap">
     <div class="tabs" role="tablist">
@@ -258,7 +276,37 @@ async function run() {
   b.disabled = false; b.textContent = "Run reconciliation";
 }
 
-function render() { renderTie(); renderStats(); renderPanel(); }
+function render() { renderTie(); renderStats(); renderTrail(); renderPanel(); }
+function renderTrail() {
+  const r = S.res, el = $("#trail");
+  if (!r || !r.bridge) { el.hidden = true; return; }
+  const b = r.bridge;
+  const rows = [{ k: "tot", label: "Your books say", sub: "what the payouts should have been", v: b.start, at: b.start, from: null }];
+  let cur = b.start;
+  for (const x of b.steps.filter((x) => x.leg === "books")) { rows.push({ k: x.key === "UNEXPLAINED" ? "un" : x.delta > 0 ? "up" : "down", label: x.label, v: x.delta, from: cur, at: cur + x.delta }); cur += x.delta; }
+  rows.push({ k: "tot sub", label: "PayPal actually paid out", sub: "the true amount", v: b.paypal, at: b.paypal, from: null });
+  cur = b.paypal;
+  for (const x of b.steps.filter((x) => x.leg === "bank")) { rows.push({ k: x.delta > 0 ? "up" : "down", label: x.label, v: x.delta, from: cur, at: cur + x.delta }); cur += x.delta; }
+  rows.push({ k: "tot sub", label: "Bank received", sub: "what hit the account", v: b.bank, at: b.bank, from: null });
+  const pts = rows.flatMap((x) => [x.at, x.from]).filter((n) => n != null);
+  const lo = Math.min(...pts), hi = Math.max(...pts), pad = Math.max((hi - lo) * 0.06, 1), a = lo - pad, z = hi + pad;
+  const pct = (n) => ((n - a) / (z - a)) * 100;
+  const cells = rows.map((x) => {
+    const l = x.from == null ? 0 : pct(Math.min(x.from, x.at)), w = x.from == null ? pct(x.at) : Math.abs(pct(x.at) - pct(x.from));
+    const val = x.from == null ? usd(x.v) : (x.v > 0 ? "+" : "-") + usd(Math.abs(x.v)).replace("-", "");
+    const cls = x.k.includes("sub") ? "sub" : "";
+    return `<div class="wr"><div class="lab ${cls}">${esc(x.label)}${x.sub ? `<small>${esc(x.sub)}</small>` : ""}</div>
+      <div class="trk" aria-hidden="true"><span class="rail"></span><span class="bar2 ${esc(x.k.split(" ")[0])}" style="left:${l.toFixed(2)}%;width:${w.toFixed(2)}%"></span></div>
+      <div class="amt2 ${cls}">${val}</div></div>`;
+  }).join("");
+  const worst = b.steps.slice().sort((p, q) => Math.abs(q.delta) - Math.abs(p.delta))[0];
+  el.hidden = false;
+  el.innerHTML = `<h2 id="h-trail">Where the difference went</h2>
+    <p class="lede">${b.start === b.bank ? "Books and bank agree." : `Your books say ${usd(b.start)} but only ${usd(b.bank)} reached the bank, a gap of ${usd(Math.abs(b.start - b.bank))}.`}${worst ? ` The biggest piece is "${esc(worst.label.toLowerCase())}" (${usd(Math.abs(worst.delta))}).` : ""}</p>
+    <div class="wf" role="img" aria-label="Step by step from books total to bank total">${cells}</div>
+    <p class="foot">Bars do not start at zero, so small steps stay visible. ${b.closes ? "Every step comes from a listed exception and the walk lands exactly on the bank total." : "The steps do not add up to the bank total; review the payout rows above."}</p>`;
+}
+
 
 function renderTie() {
   const r = S.res, tape = $("#tape"), resid = $("#resid"), sub = $("#sub");

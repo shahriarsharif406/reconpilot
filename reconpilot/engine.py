@@ -106,6 +106,42 @@ def _risk(sev: str, amount: int) -> int:
     return {"high": 60, "medium": 35, "low": 15}[sev] + min(40, int(amount / 2500))
 
 
+def money_bridge(result: dict) -> dict:
+    """Walk from what the books say to what the bank received, one labelled step at a time.
+
+    books -> (exception impacts) -> PayPal paid out -> (bank differences) -> bank received.
+    Every step comes from the engine's own numbers; `closes` is True only if the walk lands exactly
+    on the bank total, so the chart can never show a story the numbers do not support."""
+    payouts = result["payouts"]
+    pids = {p["id"] for p in payouts}
+    start = sum(p["ledger_implied"] for p in payouts)
+    steps, cur = [], start
+    by_type: dict[str, int] = defaultdict(int)
+    for x in result["exceptions"]:
+        if x["payout_id"] in pids and x["impact"] is not None:
+            by_type[x["type"]] += -x["impact"]
+    for etype, delta in sorted(by_type.items(), key=lambda kv: -abs(kv[1])):
+        if delta:
+            steps.append({"key": etype, "label": TITLES[etype], "delta": delta, "leg": "books"})
+            cur += delta
+    unexplained = -sum(p["residual"] for p in payouts)
+    if unexplained:
+        steps.append({"key": "UNEXPLAINED", "label": "Unexplained", "delta": unexplained, "leg": "books"})
+        cur += unexplained
+    mid = cur
+    paypal = sum(p["paypal_expected"] for p in payouts)
+    shortfall = sum(p["bank_variance"] for p in payouts if p["bank_variance"])
+    missing = -sum(p["paypal_expected"] for p in payouts if p["bank_actual"] is None)
+    for key, label, delta in (("BANK_VARIANCE", TITLES["BANK_VARIANCE"], shortfall),
+                              ("BANK_MISSING_DEPOSIT", TITLES["BANK_MISSING_DEPOSIT"], missing)):
+        if delta:
+            steps.append({"key": key, "label": label, "delta": delta, "leg": "bank"})
+            cur += delta
+    bank = sum(p["bank_actual"] or 0 for p in payouts)
+    return {"start": start, "paypal": paypal, "bank": bank, "end": cur, "steps": steps,
+            "closes": mid == paypal and cur == bank}
+
+
 def reconcile(data: dict) -> dict:
     pp = [dict(t) for t in data["paypal"]]
     ledger = [dict(e) for e in data["ledger"]]
@@ -374,5 +410,7 @@ def reconcile(data: dict) -> dict:
         "unexplained_residual": sum(abs(p["residual"]) for p in payouts_out),
         "ledger_entry_count": len(ledger), "bank_line_count": len(bank),
     }
-    return {"summary": summary, "exceptions": exc, "payouts": payouts_out,
-            "generated_at": dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds")}
+    out = {"summary": summary, "exceptions": exc, "payouts": payouts_out,
+           "generated_at": dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds")}
+    out["bridge"] = money_bridge(out)
+    return out

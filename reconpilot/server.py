@@ -193,7 +193,7 @@ def create_app(ai: AIClient | None = None, paypal: PayPalSandbox | None = None,
     def result():
         r = need_result()
         return {"meta": state["meta"], "period": state["data"].get("period"), "summary": r["summary"],
-                "payouts": r["payouts"], "generated_at": r["generated_at"],
+                "payouts": r["payouts"], "bridge": r["bridge"], "generated_at": r["generated_at"],
                 "exceptions": [{k: v for k, v in view(x).items() if k != "evidence"} for x in r["exceptions"]]}
 
     @app.get("/api/exceptions/{ex_id}")

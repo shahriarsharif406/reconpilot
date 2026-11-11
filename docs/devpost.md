@@ -13,24 +13,18 @@ ReconPilot ties every PayPal payout to the bank deposit and to your books, expla
 When a business sells through PayPal, three records are supposed to agree: what PayPal says it collected, what the books say, and what the bank received. They rarely do. PayPal pays out one lump that nets sales, fees, refunds and disputes. The books record each sale one by one. Someone then spends hours hunting for the difference. I wanted a tool that finds every difference, shows its evidence, and gets a person to a decision in seconds, without letting an AI quietly change financial records.
 
 ## What it does
-- Reads PayPal transactions and groups them into payouts.
-- Reconciles your own books, bank statement and PayPal activity from CSV files (column names detected automatically), or runs on built-in demo data or the live PayPal sandbox.
-- Ties each payout three ways: PayPal sent, bank received, books imply.
-- Finds 12 kinds of problems: unrecorded sales, transposed digits, net-instead-of-gross entries, duplicate entries, near-miss invoice references, unrecorded refunds, open disputes, wrong processing fees, duplicate customer charges, bank shortfalls, missing deposits, and unknown deposits.
-- Proves nothing is hidden: the unexplained difference is shown as one number that should be $0.00.
-- Explains each exception in plain English with a likely root cause and next step.
-- Proposes a balanced journal entry (debits equal credits, enforced in code).
-- Lets a person approve, reject or escalate with a note. Only approved entries reach the CSV export.
-- Records every action in a hash-chained audit trail that detects tampering.
-- Drafts a reply to PayPal for an open dispute from the run's facts, with placeholders for evidence the business must supply. Nothing is sent.
-- Produces a one-page printable report: tie-out, every decision, and the audit-chain status.
-- Answers questions about the run ("Which refunds are missing from the books?") using only that run's data.
+- **Ties three records together.** For every PayPal payout: what PayPal sent, what the bank received, what the books imply.
+- **Shows where the difference went.** A step-by-step chart walks from "your books say $20,570" to "the bank received $19,336", one labelled step per cause, and the steps land on the bank total exactly.
+- **Proves nothing is hidden.** The unexplained difference is one number that should read $0.00.
+- **Finds 12 kinds of problems** (unrecorded sales and refunds, typing slips, duplicates, wrong fees, open disputes, bank shortfalls, missing deposits) and explains each in plain English with evidence and a balanced journal entry.
+- **Keeps a person in charge.** Approve, reject or escalate with a note; only approved entries reach the export. Every action goes into a tamper-evident audit trail.
+- **Works on your own files.** Upload books, bank statement and a PayPal activity CSV; get a printable report and a draft reply to PayPal for open disputes.
 
 ## How we use PayPal
-- PayPal REST API, sandbox environment: OAuth2 client credentials.
-- Transaction Search API (`/v1/reporting/transactions`) supplies the PayPal side of the tie-out: payments, refunds, fees and dispute holds.
-- Orders v2 and the refund API (`/v2/checkout/orders`, `/v2/payments/captures/{id}/refund`) create real sandbox sales and refunds for testing, through the included `sandbox_seed` command.
-- Payout, fee and refund semantics from PayPal drive the matching logic.
+- ReconPilot integrates the PayPal REST API (sandbox base URL `https://api-m.sandbox.paypal.com`): OAuth2 client credentials, the Transaction Search API (`/v1/reporting/transactions`, 31-day window, paging), Orders v2 (create, get, capture) and capture refunds.
+- The PayPal side of every reconciliation comes from these APIs, or from a PayPal Activity report CSV with the same fields.
+- Honest status: I live in Bangladesh, where PayPal sign-up is not available, so I could not create sandbox credentials and have not run the client against the live sandbox. The PayPal Developer team confirmed on the hackathon Discord that Bangladesh is eligible but PayPal does not operate there. The client is covered by automated tests against mocked responses shaped like PayPal's documented payloads (token request, paged Transaction Search, order create, capture and refund), plus a PayPal Activity CSV import. Anyone with sandbox keys can run it live with two environment variables and `python -m reconpilot.sandbox_seed` (README, "Use your PayPal sandbox").
+- The demo video uses synthetic demo data, labelled as such on screen.
 
 ## How we use AI
 The model is the explainer and the analyst, not the decision maker.
@@ -42,15 +36,16 @@ The model is the explainer and the analyst, not the decision maker.
 Models: Anthropic Claude (default `claude-sonnet-5-5`) or Google Gemini, selected by environment key. With no key, ReconPilot runs in rule-based mode.
 
 ## How we built it
-Python 3, FastAPI, httpx, and a single-page vanilla JavaScript front end. The reconciliation engine is pure Python with money held as integer cents. The test suite (42 tests) checks the engine against planted ground truth across several random seeds. Built with Claude Code.
+Python 3, FastAPI, httpx, and a single-page vanilla JavaScript front end. The reconciliation engine is pure Python with money held as integer cents. The test suite (44 tests) checks the engine against planted ground truth across several random seeds. Built with Claude Code.
 
 ## Challenges
+- No sandbox access from Bangladesh. PayPal sign-up is unavailable here. I built the integration against PayPal's documentation, tested it with mocked responses, and added CSV import so the reconciliation engine works on real PayPal data without credentials. The live sandbox path is untested by me.
 - Fuzzy matching can steal another sale's entry. A missing INV-1043 looks one edit away from INV-1044 with the same amount. The fix: match exact references first, and never let a fuzzy match consume an entry whose reference belongs to another PayPal sale.
 - Proving completeness. Listing differences is not enough; the tool shows that every cent of the gap between PayPal and the books traces to a listed exception.
 - Keeping customer data out of prompts. A test caught names leaking through the engine's own explanation text; they are now scrubbed before any model call.
 
 ## Accomplishments
-- The engine finds exactly the planted problems on every tested seed.
+- The engine finds exactly the planted problems on every tested seed, and the "where the difference went" chart is checked to land on the bank total.
 - A balanced journal for every fixable exception, and a verifiable audit trail.
 - Works with no API key, so judges can run it in one command.
 
@@ -66,7 +61,7 @@ python, fastapi, httpx, javascript, paypal-rest-api, paypal-sandbox, anthropic-c
 ## Tools (model or AI service used and how)
 - Anthropic Claude (or Google Gemini): explains each reconciliation exception as validated JSON and answers grounded questions about the run.
 - Claude Code: used to write and test the codebase.
-- PayPal sandbox REST APIs: Transaction Search for data, Orders v2 and refunds for test data.
+- PayPal REST API client (sandbox endpoints): Transaction Search for data, Orders v2 and refunds for test data. Verified with mocked responses; not run live by the author.
 
 ## Try it
 - Repo: https://github.com/shahriarsharif406/reconpilot (public, MIT license)

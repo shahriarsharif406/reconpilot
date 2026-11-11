@@ -33,6 +33,17 @@ def build_report(result: dict, state: dict, verify: dict, audit_count: int) -> s
         ex_rows += (f"<tr><td>{e(x['id'])}</td><td>{e(x['title'])}</td><td>{e(x['severity'])}</td>"
                     f"<td class='n'>{money(x['amount'])}</td><td>{e(d['status'] if d else 'open')}</td>"
                     f"<td>{e((d['actor'] + ': ' + d['note']).strip(': ') if d else '')}</td></tr>")
+    br = result.get("bridge") or {}
+    br_rows = f"<tr><td>Your books say</td><td class='n'>{money(br['start'])}</td></tr>" if br else ""
+    for st in br.get("steps", []):
+        if st["leg"] == "books":
+            br_rows += f"<tr><td>&nbsp;&nbsp;{e(st['label'])}</td><td class='n'>{'+' if st['delta'] > 0 else '-'}{money(abs(st['delta']))}</td></tr>"
+    if br:
+        br_rows += f"<tr><td><b>PayPal actually paid out</b></td><td class='n'><b>{money(br['paypal'])}</b></td></tr>"
+        for st in br["steps"]:
+            if st["leg"] == "bank":
+                br_rows += f"<tr><td>&nbsp;&nbsp;{e(st['label'])}</td><td class='n'>{'+' if st['delta'] > 0 else '-'}{money(abs(st['delta']))}</td></tr>"
+        br_rows += f"<tr><td><b>Bank received</b></td><td class='n'><b>{money(br['bank'])}</b></td></tr>"
     chain = ("intact" if verify["ok"] else f"BROKEN at entry {verify['broken_at']}")
     return f"""<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>ReconPilot reconciliation report</title><style>{CSS}</style></head><body>
@@ -46,6 +57,8 @@ PayPal: {e(meta.get('paypal', ''))}. Books: {e(meta.get('books', ''))}{('. Bank:
 <h2>Payout tie-out</h2>
 <table><tr><th>Payout</th><th class="n">PayPal sent</th><th class="n">Bank received</th><th class="n">Books imply</th><th class="n">Unexplained</th></tr>{rows}</table>
 <p class="note">In transit, not yet paid out: {money(s['in_transit'])}. The unexplained column is the gap between PayPal and the books after subtracting every listed exception; it should be $0.00.</p>
+<h2>Where the difference went</h2>
+<table><tr><th>Step</th><th class="n">USD</th></tr>{br_rows}</table>
 <h2>Exceptions and decisions</h2>
 <table><tr><th>ID</th><th>Type</th><th>Severity</th><th class="n">Amount</th><th>Status</th><th>Reviewer note</th></tr>{ex_rows}</table>
 <h2>Audit trail</h2>

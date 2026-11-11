@@ -133,3 +133,18 @@ def test_upload_paypal_csv_option_needs_the_file():
     ledger, bank = c.get("/api/sample/ledger.csv").text, c.get("/api/sample/bank.csv").text
     r = c.post("/api/run/upload", json={"ledger_csv": ledger, "bank_csv": bank, "paypal": "csv"})
     assert r.status_code == 422 and "PayPal activity" in r.json()["detail"]
+
+
+def test_money_bridge_closes_on_demo_and_uploaded_data():
+    from reconpilot import datagen, engine
+    r = engine.reconcile(datagen.generate_demo(42))
+    b = r["bridge"]
+    assert b["closes"] and b["end"] == b["bank"]
+    assert b["start"] + sum(s["delta"] for s in b["steps"]) == b["bank"]
+    assert {s["leg"] for s in b["steps"]} <= {"books", "bank"}
+
+
+def test_money_bridge_closes_for_another_seed():
+    from reconpilot import datagen, engine
+    r = engine.reconcile(datagen.generate_demo(7))
+    assert r["bridge"]["closes"] is True

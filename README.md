@@ -53,6 +53,8 @@ The header shows which model is active. Default model: `claude-sonnet-5-5` (over
 
 ### Use your PayPal sandbox
 
+> **Status.** The live PayPal sandbox path is implemented but has not been run against a live sandbox by the author (PayPal sign-up is unavailable in Bangladesh). It is covered by tests with mocked PayPal responses. If you have sandbox credentials, the first run is the real test: please tell me about any mismatch. Without credentials, use Demo data or your own CSV files (books, bank, and a PayPal Activity report).
+
 1. Create a sandbox app at <https://developer.paypal.com/dashboard/applications/sandbox> and enable **Transaction Search** for it.
 2. Export credentials:
    ```bash
@@ -80,7 +82,7 @@ Choose **Your CSV** in the UI, pick a books file and a bank statement file, and 
 
 The PayPal side can be the demo transactions, the live sandbox, or your own **PayPal activity CSV** (PayPal: Reports, Activity, Download; USD only; completed payments, refunds and dispute holds are read, withdrawals and pending rows are skipped; matched by column name, so extra columns are fine). To try it without your own files, download `/api/sample/ledger.csv` and `/api/sample/bank.csv`, upload both with "Demo transactions", and you get the same 18 exceptions as demo mode. If your books have no fee column, fees are assumed to match PayPal, so no fee variances are reported.
 
-> **What is real and what is synthetic.** In sandbox mode the PayPal side is read live from the PayPal sandbox API. PayPal does not provide your accounting books or bank statement, so those two sides are generated around the real transactions, with planted errors, and the UI says so ("books: synthetic"). Demo mode is synthetic end to end. Nothing in this repository is real customer or bank data.
+> **What is real and what is synthetic.** In sandbox mode (if you provide credentials) the PayPal side is read live from the PayPal sandbox API. PayPal does not provide your accounting books or bank statement, so those two sides are generated around the real transactions, with planted errors, and the UI says so ("books: synthetic"). Demo mode is synthetic end to end. Nothing in this repository is real customer or bank data.
 
 ## Architecture
 
@@ -135,7 +137,7 @@ pip install -r requirements-dev.txt
 pytest -q
 ```
 
-The suite (42 tests) checks that the engine finds exactly the planted defects across several random seeds, that the unexplained difference is zero, that every journal balances, that tampering with the audit trail is detected, that customer names never reach the model, that malformed model output falls back safely, and that the PayPal client works against recorded response shapes.
+The suite (44 tests) checks that the engine finds exactly the planted defects across several random seeds, that the unexplained difference is zero, that every journal balances, that tampering with the audit trail is detected, that customer names never reach the model, that malformed model output falls back safely, and that the PayPal client works against recorded response shapes.
 
 ## Deploy
 
