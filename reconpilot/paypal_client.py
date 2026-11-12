@@ -1,6 +1,7 @@
 """PayPal **sandbox** client (OAuth2, Transaction Search, Orders v2, refunds).
 
-Safety: this module only ever talks to https://api-m.sandbox.paypal.com. There is no
+Safety: this module only ever talks to https://api-m.sandbox.paypal.com, or to a local PayPal
+simulator on 127.0.0.1 / localhost (see paypal_sim.py) when PAYPAL_BASE_URL says so. There is no
 switch for the live environment. Credentials come from environment variables.
 """
 from __future__ import annotations
@@ -16,6 +17,16 @@ SANDBOX_BASE = "https://api-m.sandbox.paypal.com"
 
 class PayPalError(RuntimeError):
     pass
+
+
+def safe_base(url: str | None) -> str:
+    """Sandbox host, or a local simulator. Anything else (including live PayPal) is refused."""
+    if not url:
+        return SANDBOX_BASE
+    u = httpx.URL(url)
+    if url.rstrip("/") == SANDBOX_BASE or (u.scheme == "http" and u.host in ("127.0.0.1", "localhost")):
+        return url.rstrip("/")
+    raise PayPalError("PAYPAL_BASE_URL must be the PayPal sandbox or a local simulator (127.0.0.1 / localhost).")
 
 
 def _cents(value) -> int:
@@ -75,10 +86,10 @@ def normalize(raw_details: list[dict]) -> tuple[list[dict], dict]:
 
 class PayPalSandbox:
     def __init__(self, client_id: str | None = None, client_secret: str | None = None,
-                 transport: httpx.BaseTransport | None = None):
+                 transport: httpx.BaseTransport | None = None, base_url: str | None = None):
         self.client_id = client_id or os.getenv("PAYPAL_CLIENT_ID", "")
         self.client_secret = client_secret or os.getenv("PAYPAL_CLIENT_SECRET", "")
-        self._http = httpx.Client(base_url=SANDBOX_BASE, timeout=30, transport=transport)
+        self._http = httpx.Client(base_url=safe_base(base_url or os.getenv("PAYPAL_BASE_URL")), timeout=30, transport=transport)
         self._token: str | None = None
 
     @property

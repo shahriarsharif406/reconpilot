@@ -18,13 +18,14 @@ from .audit import AuditLog
 from .engine import money, norm_ref, reconcile
 from .report import build_report
 from .paypal_client import PayPalError, PayPalSandbox
+from .paypal_sim import SIM_CLIENT_ID, SIM_CLIENT_SECRET, sim_transport
 
 STATIC = Path(__file__).parent / "static"
 DECISIONS = {"approve": "approved", "reject": "rejected", "escalate": "escalated", "reopen": "open"}
 
 
 class RunBody(BaseModel):
-    source: str = Field("demo", pattern="^(demo|sandbox)$")
+    source: str = Field("demo", pattern="^(demo|sandbox|simulator)$")
     seed: int = 42
 
 
@@ -74,14 +75,17 @@ def create_app(ai: AIClient | None = None, paypal: PayPalSandbox | None = None,
         return {"ok": True, "ai": ai.mode, "paypal_sandbox_configured": paypal.configured,
                 "has_run": state["result"] is not None}
 
-    def sandbox_paypal(seed: int) -> tuple[dict, dict]:
-        """PayPal side from the live sandbox: transactions, grouped into weekly payouts."""
-        if not paypal.configured:
-            raise HTTPException(400, "Sandbox credentials missing. Set PAYPAL_CLIENT_ID and PAYPAL_CLIENT_SECRET.")
+    def paypal_side(client: PayPalSandbox, seed: int, exercise_orders: bool = False) -> tuple[dict, dict]:
+        """PayPal side read through the client: transactions, grouped into weekly payouts."""
         end = dt.datetime.now(dt.timezone.utc)
         start = end - dt.timedelta(days=30)
         try:
-            txns, skipped = paypal.list_transactions(start, end)
+            if exercise_orders:  # simulator only: create, read, capture and refund one order first
+                o = client.create_order("49.00", "INV-SIM-1")
+                client.get_order(o["id"])
+                cap = client.capture_order(o["id"])
+                client.refund_capture(cap["purchase_units"][0]["payments"]["captures"][0]["id"], "10.00")
+            txns, skipped = client.list_transactions(start, dt.datetime.now(dt.timezone.utc))
         except PayPalError as exc:
             raise HTTPException(502, str(exc))
         if not txns:
@@ -93,6 +97,18 @@ def create_app(ai: AIClient | None = None, paypal: PayPalSandbox | None = None,
         data = {"paypal": txns, "payouts": payouts,
                 "period": {"start": start.date().isoformat(), "end": end.date().isoformat()}}
         return data, {"skipped": skipped}
+
+    def sandbox_paypal(seed: int) -> tuple[dict, dict]:
+        if not paypal.configured:
+            raise HTTPException(400, "Sandbox credentials missing. Set PAYPAL_CLIENT_ID and PAYPAL_CLIENT_SECRET.")
+        return paypal_side(paypal, seed)
+
+    def simulator_paypal(seed: int) -> tuple[dict, dict]:
+        calls: list[str] = []
+        client = PayPalSandbox(SIM_CLIENT_ID, SIM_CLIENT_SECRET, transport=sim_transport(seed, calls),
+                               base_url="http://127.0.0.1:1")
+        data, extra = paypal_side(client, seed, exercise_orders=True)
+        return data, {**extra, "api_calls": calls}
 
     def finish_run(data: dict, meta: dict) -> dict:
         state.update({"data": data, "result": reconcile(data), "decisions": {}, "meta": meta})
@@ -107,6 +123,14 @@ def create_app(ai: AIClient | None = None, paypal: PayPalSandbox | None = None,
         if body.source == "demo":
             data = datagen.generate_demo(body.seed)
             meta = {"source": "demo", "paypal": "synthetic demo data", "books": "synthetic"}
+        elif body.source == "simulator":
+            pp, extra = simulator_paypal(body.seed)
+            start = dt.date.fromisoformat(pp["period"]["start"])
+            end = dt.date.fromisoformat(pp["period"]["end"])
+            data = datagen.build_books(pp["paypal"], body.seed, start, end, inject=True)
+            data.update({"period": pp["period"], "source": "simulator"})
+            meta = {"source": "simulator", "paypal": "PayPal API simulator (local; not PayPal)",
+                    "books": "synthetic (built around the simulator's data)", **extra}
         else:
             pp, extra = sandbox_paypal(body.seed)
             start = dt.date.fromisoformat(pp["period"]["start"])

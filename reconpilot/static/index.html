@@ -50,6 +50,10 @@ a{color:inherit}
 .tie{background:var(--navy);color:var(--on-navy);padding:clamp(22px,4vw,44px) clamp(16px,4vw,44px) 26px}
 .tie h1{margin:0;font:800 clamp(30px,5.2vw,58px)/.98 var(--display);font-stretch:108%;letter-spacing:-.02em;max-width:18ch}
 .tie .sub{margin:12px 0 0;color:#a9bccd;max-width:62ch}
+.calls{margin:14px 0 0;max-width:80ch;font-size:13px;color:#9db2c5}
+.calls summary{cursor:pointer;color:var(--on-navy);font-weight:600}
+.calls ol{margin:8px 0 0;padding-left:22px;font:500 12.5px/1.6 ui-monospace,Menlo,monospace}
+.calls .warn{margin:8px 0 0;color:#ffd79a}
 .tape{margin-top:26px;overflow-x:auto}
 .tape table{width:100%;min-width:700px;border-collapse:collapse}
 .tape th{font:600 12px/1.2 var(--body);color:#9db2c5;text-align:right;padding:0 14px 10px;border-bottom:1px solid var(--navy-rule)}
@@ -159,6 +163,9 @@ textarea{width:100%;min-height:64px;border:1px solid var(--rule);border-radius:3
 .toast{position:fixed;left:50%;bottom:22px;transform:translateX(-50%);background:var(--ink);color:var(--sheet);padding:10px 16px;border-radius:3px;display:none;z-index:9}
 .toast.on{display:block}
 @media (max-width:720px){
+  .seg{display:grid;grid-template-columns:1fr 1fr;width:100%}
+  .seg button{padding:8px 6px;font-size:14px;border-bottom:1px solid var(--rule-2)}
+  .calls ol{overflow-wrap:anywhere}
   table.ex .hide-s{display:none}
   table.ex td,table.ex th{padding-left:7px;padding-right:7px}
   .t-sub{max-width:34ch}
@@ -175,6 +182,7 @@ textarea{width:100%;min-height:64px;border:1px solid var(--rule);border-radius:3
   <div class="brand">Recon<i>Pilot</i></div>
   <div class="seg" role="group" aria-label="Data source">
     <button id="src-demo" aria-pressed="true">Demo data</button>
+    <button id="src-sim" aria-pressed="false">PayPal simulator</button>
     <button id="src-sandbox" aria-pressed="false">PayPal sandbox</button>
     <button id="src-upload" aria-pressed="false">Your CSV</button>
   </div>
@@ -196,6 +204,7 @@ textarea{width:100%;min-height:64px;border:1px solid var(--rule);border-radius:3
   <section class="tie" aria-labelledby="h1">
     <h1 id="h1">Does PayPal, your books and your bank agree?</h1>
     <p class="sub" id="sub">Run a reconciliation to tie every PayPal payout to the bank deposit and to what your books recorded.</p>
+    <div id="calls"></div>
     <div class="tape" id="tape"></div>
     <div class="resid" id="resid"></div>
   </section>
@@ -310,10 +319,14 @@ function renderTrail() {
 
 function renderTie() {
   const r = S.res, tape = $("#tape"), resid = $("#resid"), sub = $("#sub");
-  if (!r) { tape.innerHTML = ""; resid.innerHTML = ""; return; }
+  if (!r) { tape.innerHTML = ""; resid.innerHTML = ""; $("#calls").innerHTML = ""; return; }
   const s = r.summary;
   ANIM = S.animFor !== r.generated_at; S.animFor = r.generated_at;
   sub.textContent = `${r.meta.paypal}; books: ${r.meta.books}${r.meta.bank ? "; bank: " + r.meta.bank : ""}. Period ${dshort(r.period.start)} to ${dshort(r.period.end)} 2026.`;
+  const cl = r.meta.api_calls;
+  $("#calls").innerHTML = cl && cl.length ? `<details class="calls"><summary>${cl.length} PayPal API calls made by the real client (against the local simulator)</summary>
+    <ol>${cl.map((c) => `<li>${esc(c)}</li>`).join("")}</ol>
+    <p class="warn">The simulator is a stand-in for PayPal, not PayPal. It mirrors PayPal's documented API; the live sandbox has not been run by the author.</p></details>` : "";
   let rows = "", i = 0;
   for (const p of r.payouts) {
     const off = p.bank_variance;
@@ -491,9 +504,9 @@ document.addEventListener("keydown", (e) => {
 document.addEventListener("submit", (e) => { if (e.target.id === "askf") { e.preventDefault(); const q = $("#q").value.trim(); if (q) ask(q); } });
 $("#run").onclick = run;
 $("#f-pp").onchange = () => { $("#f-ppcsv-wrap").hidden = $("#f-pp").value !== "csv"; };
-for (const k of ["demo", "sandbox", "upload"]) $("#src-" + k).onclick = () => {
-  S.src = k;
-  for (const j of ["demo", "sandbox", "upload"]) $("#src-" + j).setAttribute("aria-pressed", j === k);
+for (const k of ["demo", "sim", "sandbox", "upload"]) $("#src-" + k).onclick = () => {
+  S.src = k === "sim" ? "simulator" : k;
+  for (const j of ["demo", "sim", "sandbox", "upload"]) $("#src-" + j).setAttribute("aria-pressed", j === k);
   $("#upl").classList.toggle("on", k === "upload");
 };
 for (const [id, k] of [["tab-ex", "ex"], ["tab-audit", "audit"], ["tab-ask", "ask"]]) $("#" + id).onclick = () => { S.tab = k; renderPanel(); };

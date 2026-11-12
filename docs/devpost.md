@@ -21,10 +21,12 @@ When a business sells through PayPal, three records are supposed to agree: what 
 - **Works on your own files.** Upload books, bank statement and a PayPal activity CSV; get a printable report and a draft reply to PayPal for open disputes.
 
 ## How we use PayPal
-- ReconPilot integrates the PayPal REST API (sandbox base URL `https://api-m.sandbox.paypal.com`): OAuth2 client credentials, the Transaction Search API (`/v1/reporting/transactions`, 31-day window, paging), Orders v2 (create, get, capture) and capture refunds.
+- ReconPilot integrates the PayPal REST API (sandbox base URL `https://api-m.sandbox.paypal.com`): OAuth2 client credentials, the Transaction Search API (`/v1/reporting/transactions`, 31-day window, paging), Orders v2 (create, get, capture) and capture refunds. The client refuses any other host, so it can never touch live PayPal.
 - The PayPal side of every reconciliation comes from these APIs, or from a PayPal Activity report CSV with the same fields.
-- Honest status: I live in Bangladesh, where PayPal sign-up is not available, so I could not create sandbox credentials and have not run the client against the live sandbox. The PayPal Developer team confirmed on the hackathon Discord that Bangladesh is eligible but PayPal does not operate there. The client is covered by automated tests against mocked responses shaped like PayPal's documented payloads (token request, paged Transaction Search, order create, capture and refund), plus a PayPal Activity CSV import. Anyone with sandbox keys can run it live with two environment variables and `python -m reconpilot.sandbox_seed` (README, "Use your PayPal sandbox").
-- The demo video uses synthetic demo data, labelled as such on screen.
+- Honest status: I live in Bangladesh, where PayPal sign-up is not available, so I could not create sandbox credentials and have not run the client against the live sandbox. The PayPal Developer team confirmed on the hackathon Discord that Bangladesh is eligible but PayPal does not operate there.
+- What I did instead: I wrote a **local PayPal API simulator** that serves the same endpoints with PayPal's documented JSON shapes (token auth, paged Transaction Search with the 31-day limit, order create/get/capture, refunds, plus noise rows such as withdrawals and pending payments). In "PayPal simulator" mode the real client code runs against it, and the UI lists every API call it made. The simulator is clearly labelled everywhere; it is a stand-in, not PayPal, and it proves the client's request building, paging and parsing, not PayPal's real behaviour.
+- Anyone with sandbox keys can run the same client live with two environment variables and `python -m reconpilot.sandbox_seed` (README, "Use your PayPal sandbox").
+- The demo video uses synthetic data, labelled as such on screen.
 
 ## How we use AI
 The model is the explainer and the analyst, not the decision maker.
@@ -36,10 +38,10 @@ The model is the explainer and the analyst, not the decision maker.
 Models: Anthropic Claude (default `claude-sonnet-5-5`) or Google Gemini, selected by environment key. With no key, ReconPilot runs in rule-based mode.
 
 ## How we built it
-Python 3, FastAPI, httpx, and a single-page vanilla JavaScript front end. The reconciliation engine is pure Python with money held as integer cents. The test suite (44 tests) checks the engine against planted ground truth across several random seeds. Built with Claude Code.
+Python 3, FastAPI, httpx, and a single-page vanilla JavaScript front end. The reconciliation engine is pure Python with money held as integer cents. The test suite (53 tests) checks the engine against planted ground truth across several random seeds. Built with Claude Code.
 
 ## Challenges
-- No sandbox access from Bangladesh. PayPal sign-up is unavailable here. I built the integration against PayPal's documentation, tested it with mocked responses, and added CSV import so the reconciliation engine works on real PayPal data without credentials. The live sandbox path is untested by me.
+- No sandbox access from Bangladesh. PayPal sign-up is unavailable here. I built the integration against PayPal's documentation, wrote a local PayPal API simulator so the real client code could be exercised end to end (and tested against it), and added CSV import so the reconciliation engine works on real PayPal data without credentials. The live sandbox path is untested by me.
 - Fuzzy matching can steal another sale's entry. A missing INV-1043 looks one edit away from INV-1044 with the same amount. The fix: match exact references first, and never let a fuzzy match consume an entry whose reference belongs to another PayPal sale.
 - Proving completeness. Listing differences is not enough; the tool shows that every cent of the gap between PayPal and the books traces to a listed exception.
 - Keeping customer data out of prompts. A test caught names leaking through the engine's own explanation text; they are now scrubbed before any model call.
@@ -56,12 +58,12 @@ Payment reconciliation is mostly about trust: show the evidence, keep the math d
 Push approved journals to accounting software, draft dispute evidence, handle multiple currencies, and run daily with alerts.
 
 ## Built with
-python, fastapi, httpx, javascript, paypal-rest-api, paypal-sandbox, anthropic-claude, google-gemini, claude-code, render
+python, fastapi, httpx, javascript, paypal-rest-api, anthropic-claude, google-gemini, claude-code, render
 
 ## Tools (model or AI service used and how)
 - Anthropic Claude (or Google Gemini): explains each reconciliation exception as validated JSON and answers grounded questions about the run.
 - Claude Code: used to write and test the codebase.
-- PayPal REST API client (sandbox endpoints): Transaction Search for data, Orders v2 and refunds for test data. Verified with mocked responses; not run live by the author.
+- PayPal REST API client (sandbox endpoints): Transaction Search for data, Orders v2 and refunds for test data. Exercised against a local PayPal simulator and mocked responses; not run live by the author.
 
 ## Try it
 - Repo: https://github.com/shahriarsharif406/reconpilot (public, MIT license)

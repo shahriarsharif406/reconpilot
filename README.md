@@ -51,6 +51,20 @@ uvicorn reconpilot.server:app --port 8000
 
 The header shows which model is active. Default model: `claude-sonnet-5-5` (override with `ANTHROPIC_MODEL`).
 
+### No PayPal credentials? Use the simulator
+
+`reconpilot/paypal_sim.py` is a small local stand-in for the PayPal API (it is **not** PayPal): OAuth2 token, paged Transaction Search with the 31-day limit, Orders v2 create/get/capture and capture refunds, with JSON shaped like PayPal's documented payloads, plus rows a real account has and the client must skip (a withdrawal, a pending payment). In the UI choose **PayPal simulator**: the real client in `paypal_client.py` places an order, captures it, refunds part of it and reads the transactions back, and the page lists each API call it made.
+
+To run it over real HTTP instead of in process:
+
+```bash
+python -m reconpilot.paypal_sim --port 9000
+PAYPAL_BASE_URL=http://127.0.0.1:9000 PAYPAL_CLIENT_ID=sim-client PAYPAL_CLIENT_SECRET=sim-secret \
+  python -m uvicorn reconpilot.server:app --port 8000   # then choose "PayPal sandbox" in the UI
+```
+
+`PAYPAL_BASE_URL` accepts only the PayPal sandbox host or `http://127.0.0.1` / `localhost`; the client refuses anything else, including live PayPal. The simulator proves the client's request building, paging and parsing. It cannot prove how real PayPal behaves.
+
 ### Use your PayPal sandbox
 
 > **Status.** The live PayPal sandbox path is implemented but has not been run against a live sandbox by the author (PayPal sign-up is unavailable in Bangladesh). It is covered by tests with mocked PayPal responses. If you have sandbox credentials, the first run is the real test: please tell me about any mismatch. Without credentials, use Demo data or your own CSV files (books, bank, and a PayPal Activity report).
@@ -105,6 +119,7 @@ PayPal sandbox API ──┐
 |---|---|
 | `reconpilot/engine.py` | Pure reconciliation logic, money in integer cents |
 | `reconpilot/paypal_client.py` | Sandbox-only PayPal client: OAuth2, Transaction Search, Orders v2, refunds |
+| `reconpilot/paypal_sim.py` | Local PayPal API simulator (not PayPal) for running the client without credentials |
 | `reconpilot/sandbox_seed.py` | CLI to create real sandbox sales for testing |
 | `reconpilot/datagen.py` | Synthetic data with known ground truth |
 | `reconpilot/ai.py` | Model calls, redaction, validation, offline fallback |
@@ -116,7 +131,7 @@ PayPal sandbox API ──┐
 
 | Method | Path | Purpose |
 |---|---|---|
-| POST | `/api/run` | `{"source":"demo"\|"sandbox"}` run a reconciliation |
+| POST | `/api/run` | `{"source":"demo"\|"simulator"\|"sandbox"}` run a reconciliation |
 | POST | `/api/run/upload` | `{"ledger_csv","bank_csv","paypal":"demo"\|"sandbox"}` reconcile your own CSV text |
 | POST | `/api/exceptions/{id}/dispute-draft` | Draft reply to PayPal for an open dispute (draft only) |
 | GET | `/api/report.html` | Printable reconciliation report |
@@ -137,7 +152,7 @@ pip install -r requirements-dev.txt
 pytest -q
 ```
 
-The suite (44 tests) checks that the engine finds exactly the planted defects across several random seeds, that the unexplained difference is zero, that every journal balances, that tampering with the audit trail is detected, that customer names never reach the model, that malformed model output falls back safely, and that the PayPal client works against recorded response shapes.
+The suite (53 tests) checks that the engine finds exactly the planted defects across several random seeds, that the unexplained difference is zero, that every journal balances, that tampering with the audit trail is detected, that customer names never reach the model, that malformed model output falls back safely, and that the PayPal client works against recorded response shapes.
 
 ## Deploy
 
